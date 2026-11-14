@@ -7,6 +7,8 @@ alwaysApply: true
 
 Read `AGENTS.md` before changing behavior. Deployable code lives only in `firmware/`. Docs live in `docs/` and must never be copied to the Pico (tiny flash).
 
+Git is trunk-based: never push to `main`. Use `feature/<name>` (or `fix/` / `docs/` / `chore/`), open a PR, squash or rebase merge. See `docs/CONTRIBUTING.md`.
+
 This is MicroPython on a Raspberry Pi Pico W. There is no pip, no asyncio, and no CPython-only stdlib. On-device imports are flat (`from lights import …`) because `.py` files are copied to the Pico root.
 
 ## Invariants

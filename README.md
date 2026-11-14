@@ -14,6 +14,8 @@ Agents changing this firmware should follow **AGENTS.md** (behavior contract) be
 
 The Pico has very little flash. Never copy `docs/`, markdown, or SVG onto the device. See [docs/DEPLOY.md](docs/DEPLOY.md).
 
+**Git:** trunk-based — work on `feature/…` (or `fix/…`) branches and merge to `main` via PR. Direct pushes to `main` are blocked. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
+
 ## Features
 
 - **Single set of 4 outputs** (Red, Yellow1, Yellow2, Green) — wire multiple light sets in parallel per color
