@@ -63,6 +63,24 @@ def _get_wifi_password():
     return ""  # Never show password in HTML
 
 
+def _send_all(conn, data):
+    """Send every byte. Pico/MicroPython socket.send() often writes only a prefix.
+
+    There is no separate HTTP payload cap to raise — callers must loop until
+    the full body is written (and keep pages small enough for RAM).
+    """
+    if isinstance(data, str):
+        data = data.encode("utf-8")
+    sent = 0
+    length = len(data)
+    while sent < length:
+        # 1 KiB chunks keep peak alloc modest on Pico 2 W / Pico W
+        n = conn.send(data[sent:sent + 1024])
+        if not n:
+            raise OSError("socket send returned 0")
+        sent += n
+
+
 def _css():
     """Shared UI — visual tokens aligned with www.rcdrift.ro (compact for Pico RAM)."""
     return (
@@ -141,13 +159,13 @@ def _i18n_js():
         "'top':'START LIGHT / CONTROL',"
         "'nav.remote':'Remote','nav.settings':'Settings',"
         "'foot':'Style matched to ',"
-        "'ctrl.h1':'START.<br>THE<br><em>TREE.</em>',"
+        "'ctrl.h1':'START.<br>THE<br><em>TREE.<\\/em>',"
         "'ctrl.lead':'Press START, wait the delay, then red -> yellow -> green. Same timing as Settings.',"
         "'status.ready':'Ready','btn.start':'START sequence',"
         "'status.starting':'Starting...','status.countdown':'Countdown - %s sec',"
         "'status.racing':'Race started','status.error':'Error: ',"
         "'flash.saved':'Settings saved.',"
-        "'set.h1':'SETTINGS.<br><em>TIMING.</em>',"
+        "'set.h1':'SETTINGS.<br><em>TIMING.<\\/em>',"
         "'set.lead':'WiFi, lamp delays, and per-channel LED test. Same sequence the START button runs.',"
         "'p.wifi':'WiFi','l.ssid':'SSID','l.pass':'Password',"
         "'ph.ssid':'Network name','ph.pass':'Leave blank to keep current',"
@@ -166,7 +184,7 @@ def _i18n_js():
         "'led.2':'Yellow 2 (GP4)','led.3':'Green (GP5)',"
         "'btn.alloff':'All LEDs off','led.ok':'OK','led.err':'Error',"
         "'led.fail':'Failed: ','led.alloff':'All off',"
-        "'404.h1':'404.<br><em>MISS.</em>',"
+        "'404.h1':'404.<br><em>MISS.<\\/em>',"
         "'404.lead':'No page here. Back to remote or settings.',"
         "'404.remote':'Remote control','404.settings':'Settings',"
         "'title.remote':'Start Light - Remote','title.settings':'Start Light - Settings',"
@@ -176,13 +194,13 @@ def _i18n_js():
         "'top':'START LIGHT / CONTROL',"
         "'nav.remote':'Control','nav.settings':'Setari',"
         "'foot':'Stil ca pe ',"
-        "'ctrl.h1':'START.<br>LUMINI.<br><em>GO.</em>',"
+        "'ctrl.h1':'START.<br>LUMINI.<br><em>GO.<\\/em>',"
         "'ctrl.lead':'Apasa START, asteapta delay-ul, apoi rosu -> galben -> verde. Aceleasi timpuri ca la Setari.',"
         "'status.ready':'Pregatit','btn.start':'START secventa',"
         "'status.starting':'Pornire...','status.countdown':'Numaratoare - %s sec',"
         "'status.racing':'Cursa a inceput','status.error':'Eroare: ',"
         "'flash.saved':'Setari salvate.',"
-        "'set.h1':'SETARI.<br><em>TIMPI.</em>',"
+        "'set.h1':'SETARI.<br><em>TIMPI.<\\/em>',"
         "'set.lead':'WiFi, timpuri la lumini si test LED pe canal. Aceeasi secventa ca butonul START.',"
         "'p.wifi':'WiFi','l.ssid':'SSID','l.pass':'Parola',"
         "'ph.ssid':'Nume retea','ph.pass':'Lasati gol ca sa pastreti parola',"
@@ -201,7 +219,7 @@ def _i18n_js():
         "'led.2':'Galben 2 (GP4)','led.3':'Verde (GP5)',"
         "'btn.alloff':'Toate LED-urile off','led.ok':'OK','led.err':'Eroare',"
         "'led.fail':'Esec: ','led.alloff':'Toate off',"
-        "'404.h1':'404.<br><em>LIPSA.</em>',"
+        "'404.h1':'404.<br><em>LIPSA.<\\/em>',"
         "'404.lead':'Nu exista aceasta pagina. Inapoi la control sau setari.',"
         "'404.remote':'Control remote','404.settings':'Setari',"
         "'title.remote':'Start Light - Control','title.settings':'Start Light - Setari',"
@@ -234,7 +252,11 @@ def _i18n_js():
 
 
 def _shell(title_key, nav, body):
-    """Page chrome matching RCDrift.ro: topline, // brand, RO/EN switch."""
+    """Page chrome matching RCDrift.ro: topline, // brand, RO/EN switch.
+
+    Style in <head>; i18n script at end of <body> so a truncated send still
+    leaves visible markup (default Romanian) instead of a blank page.
+    """
     c_on = ' class="on"' if nav == "control" else ""
     s_on = ' class="on"' if nav == "settings" else ""
     return (
@@ -244,7 +266,6 @@ def _shell(title_key, nav, body):
         "<meta name=\"theme-color\" content=\"#0a0910\">"
         "<title>Start Light</title>"
         "<style>" + _css() + "</style>"
-        "<script>" + _i18n_js() + "</script>"
         "</head><body>"
         "<div class=\"topline\">"
         "<span data-i18n=\"top\">START LIGHT / CONTROL</span>"
@@ -265,7 +286,7 @@ def _shell(title_key, nav, body):
         "<p class=\"foot\"><span data-i18n=\"foot\">Stil ca pe </span>"
         "<a href=\"https://www.rcdrift.ro\" target=\"_blank\" rel=\"noopener\">rcdrift.ro</a>"
         "</p></div>"
-        "<script>I18N.init()</script>"
+        "<script>" + _i18n_js() + "I18N.init()</script>"
         "</body></html>"
     )
 
@@ -545,15 +566,19 @@ def handle_request(conn, settings, light_controller):
             content_type = "text/html; charset=utf-8"
         elif content_type == "application/json":
             content_type = "application/json; charset=utf-8"
-        conn.send(
+        if isinstance(response, str):
+            body = response.encode("utf-8")
+        else:
+            body = response
+        headers = (
             b"HTTP/1.1 200 OK\r\nContent-Type: "
             + content_type.encode()
+            + b"\r\nContent-Length: "
+            + str(len(body)).encode()
             + b"\r\nConnection: close\r\n\r\n"
         )
-        if isinstance(response, str):
-            conn.send(response.encode("utf-8"))
-        else:
-            conn.send(response)
+        _send_all(conn, headers)
+        _send_all(conn, body)
     except Exception as e:
         try:
             conn.send(b"HTTP/1.1 500 OK\r\n\r\nError: " + str(e).encode())

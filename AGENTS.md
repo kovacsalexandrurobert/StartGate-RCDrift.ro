@@ -100,6 +100,8 @@ Defaults in `config.py`: red 1.0 s, random wait 1–3 s, yellow interval 0.5 s, 
 
 `run_server` binds, listens for **one** client with a 1 s accept timeout, handles it, closes the socket, returns. `SO_REUSEADDR` is set. Bind failure (port in use) returns immediately. The start sequence blocks the ready loop, so HTTP is dead for the whole sequence.
 
+Responses use `_send_all` (looped 1 KiB `socket.send` + `Content-Length`). A single `conn.send(big_buffer)` on Pico often truncates mid-page; there is no separate “raise the HTTP limit” knob.
+
 No authentication. The server is only as private as the LAN.
 
 | Route | Behavior |
