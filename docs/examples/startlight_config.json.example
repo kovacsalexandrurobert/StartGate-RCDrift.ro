@@ -1,0 +1,11 @@
+{
+  "red_duration": 1.0,
+  "random_wait_min": 1.0,
+  "random_wait_max": 3.0,
+  "yellow_interval": 0.5,
+  "green_off_delay": 3.0,
+  "start_delay_mode": 0,
+  "start_delay_fixed": 5,
+  "start_delay_random_min": 5,
+  "start_delay_random_max": 20
+}

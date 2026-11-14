@@ -1,10 +1,22 @@
 # Device secrets and runtime state. Created on the Pico, never committed.
+# May also appear at the repo root during local testing — still never commit.
+# Tracked templates: docs/examples/*.json.example
 wifi_creds.json
 wifi_networks.json
 last_wifi.json
 wifi_country.json
 ble_pending_ip.json
 startlight_config.json
+**/wifi_creds.json
+**/wifi_networks.json
+**/last_wifi.json
+**/wifi_country.json
+**/ble_pending_ip.json
+**/startlight_config.json
+!docs/examples/*.json.example
+
+# Pico flash is tiny: never treat docs as deployable
+# (copy only firmware/*.py — see firmware/README.md)
 
 __pycache__/
 *.pyc

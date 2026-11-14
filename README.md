@@ -4,6 +4,16 @@ Wireless remote-controlled start light system for F1/drift racing, built for **R
 
 Agents changing this firmware should follow **AGENTS.md** (behavior contract) before editing.
 
+## Repository layout
+
+| Path | Purpose |
+|------|---------|
+| [`firmware/`](firmware/) | **Only** `.py` modules to copy onto the Pico |
+| [`docs/`](docs/) | Deploy guide, schematic — **not** for the Pico |
+| [`AGENTS.md`](AGENTS.md) | Behavior contract for future agents |
+
+The Pico has very little flash. Never copy `docs/`, markdown, or SVG onto the device. See [docs/DEPLOY.md](docs/DEPLOY.md).
+
 ## Features
 
 - **Single set of 4 outputs** (Red, Yellow1, Yellow2, Green) — wire multiple light sets in parallel per color
@@ -22,7 +32,7 @@ Agents changing this firmware should follow **AGENTS.md** (behavior contract) be
 - 220Ω resistors (one per GPIO)
 - Optional: SSD1306 128×64 I2C OLED (GP6 SDA, GP7 SCL) – see schematic
 
-See **SCHEMATIC.md** for wiring.
+See **[docs/SCHEMATIC.md](docs/SCHEMATIC.md)** for wiring.
 
 ## Firmware
 
@@ -34,8 +44,13 @@ Use **MicroPython 1.22+** with **Bluetooth support** for Pico W:
 ## Installation
 
 1. Flash MicroPython (with BLE) to Pico W
-2. Copy all `.py` files to the Pico
-3. Edit `config.py` – set `WIFI_SSID` and `WIFI_PASSWORD` for your network (or leave blank and use BLE on first boot)
+2. Copy **only** the `.py` files from `firmware/` to the Pico root (not `docs/`, not this README):
+
+   ```text
+   mpremote cp firmware/*.py :
+   ```
+
+3. Optionally edit `firmware/config.py` before copy – set `WIFI_SSID` and `WIFI_PASSWORD` (or leave blank and use BLE on first boot)
 4. Power on – self-test runs, then WiFi connects
 
 ## First-Time Setup (No WiFi Credentials)
@@ -184,24 +199,31 @@ Once connected to WiFi:
 | `wifi_country.json` | WiFi country code (from BLE or default RO) |
 | `last_wifi.json` | Last successfully connected network |
 | `wifi_creds.json` | Legacy single-network (auto-migrated) |
+| `ble_pending_ip.json` | Whether to advertise IP over BLE after connect |
 
-On boot, the device scans for WiFi. If the last successful network is in range, it connects to that first.
+These files are gitignored. Placeholder shapes (no real passwords) are in [`docs/examples/`](docs/examples/).
+
+On boot, the device tries known networks. If a last successful SSID is stored, it is tried first.
 
 ## File Structure
 
 ```
-AGENTS.md        - Behavior contract for future changes
-config.py        - Default settings, GPIO map
-wifi_config.py   - WiFi credential storage (networks + last successful)
-settings.py      - Light settings (startlight_config.json)
-lights.py        - LED/GPIO control
-webserver.py     - HTTP server
-ble_uart.py      - BLE UART for credentials
-ble_advertising.py - BLE helper
-display.py       - Status display (OLED)
-ssd1306.py       - SSD1306 I2C driver
-main.py          - Entry point
-boot.py          - Startup (minimal)
+AGENTS.md                 - Behavior contract for agents (not on Pico)
+README.md                 - Human setup (not on Pico)
+docs/                     - Schematic + doc index (not on Pico)
+firmware/                 - Copy only these .py files to the Pico
+  main.py                 - Entry point
+  boot.py                 - Startup (minimal)
+  config.py               - Default settings, GPIO map
+  settings.py             - Light settings (startlight_config.json)
+  lights.py               - LED/GPIO control
+  webserver.py            - HTTP server
+  wifi_config.py          - WiFi credential storage
+  ble_uart.py             - BLE UART for credentials / START
+  ble_advertising.py      - BLE helper
+  display.py              - Status display (OLED)
+  ssd1306.py              - SSD1306 I2C driver
+  onboard_led.py          - Onboard LED status patterns
 ```
 
 WiFi passwords and on-device JSON (`wifi_creds.json`, `wifi_networks.json`, `startlight_config.json`, and the other files in `.gitignore`) stay on the Pico. They are not part of this repository.

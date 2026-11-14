@@ -2,13 +2,24 @@
 
 Firmware for a **Raspberry Pi Pico W** (MicroPython 1.22+ with Bluetooth) that runs a drift/F1-style start lamp tree. Four GPIO outputs drive solid-state relays. Operators start a run from a phone browser on WiFi, or from BLE when WiFi is down.
 
-Human setup lives in `README.md`. Wiring lives in `SCHEMATIC.md`. This file is the behavior contract.
+Human setup lives in `README.md`. Wiring lives in `docs/SCHEMATIC.md`. This file is the behavior contract. Repo layout keeps docs off the device: only `firmware/*.py` is flashed.
+
+## Repo layout
+
+| Path | On the Pico? | Role |
+|------|--------------|------|
+| `firmware/` | Yes — copy `.py` only | Deployable MicroPython |
+| `docs/` | No | Schematic and doc index |
+| `AGENTS.md`, `README.md`, `LICENSE` | No | Agents, humans, license |
+| `.cursor/rules/` | No | Cursor agent constraints |
 
 ## Deploy
 
-Copy the `.py` modules to the Pico root. `boot.py` is intentionally empty; `main.py` is the program.
+Copy **only** the `.py` files from `firmware/` to the Pico root. Example: `mpremote cp firmware/*.py :`. Do not copy `docs/` or this file. Full steps: `docs/DEPLOY.md`.
 
-Do **not** copy JSON files from a dev PC onto the device, and do not commit them. They are created on the Pico and hold WiFi passwords plus local timing overrides. `config.py` ships with `WIFI_SSID` and `WIFI_PASSWORD` empty so first boot falls through to BLE provisioning.
+`firmware/boot.py` is intentionally empty; `firmware/main.py` is the program. Imports stay flat (`from lights import …`) because files land at the Pico root, not inside a `firmware` package.
+
+Do **not** copy JSON files from a dev PC onto the device, and do not commit them. They are created on the Pico and hold WiFi passwords plus local timing overrides. `firmware/config.py` ships with `WIFI_SSID` and `WIFI_PASSWORD` empty so first boot falls through to BLE provisioning.
 
 Runtime is MicroPython: `%` formatting, `machine` / `network` / `bluetooth`, no `pip`, no `asyncio`, no type-checking imports.
 
@@ -16,22 +27,22 @@ Runtime is MicroPython: `%` formatting, `machine` / `network` / `bluetooth`, no 
 
 | File | Role |
 |------|------|
-| `main.py` | Boot, WiFi retry loop, BLE fallback, IP handoff, start loop |
-| `boot.py` | Empty. MicroPython runs it before `main.py` |
-| `config.py` | Compile-time defaults: GPIO, timing, display, BLE PIN, country, scan flag |
-| `settings.py` | Load/save `startlight_config.json`, merge onto defaults, compute start delay |
-| `lights.py` | Active-low GPIO. Self-test, status blink, start sequence |
-| `webserver.py` | One-shot HTTP server, inline UI, `/start`, LED test API |
-| `wifi_config.py` | Known networks, last SSID, country, BLE-IP-pending flag, legacy creds migration |
-| `ble_uart.py` | Nordic UART peripheral: PIN, credentials, `START`, IP beacon |
-| `ble_advertising.py` | Advertising payload helper (MicroPython sample). Leave it alone |
-| `display.py` | Optional SSD1306 status screens. Failures are swallowed |
-| `ssd1306.py` | Vendored I2C driver from micropython-ssd1306. Do not restyle |
-| `onboard_led.py` | Pico W `Pin("LED")` patterns. No-op if the LED pin is missing |
+| `firmware/main.py` | Boot, WiFi retry loop, BLE fallback, IP handoff, start loop |
+| `firmware/boot.py` | Empty. MicroPython runs it before `main.py` |
+| `firmware/config.py` | Compile-time defaults: GPIO, timing, display, BLE PIN, country, scan flag |
+| `firmware/settings.py` | Load/save `startlight_config.json`, merge onto defaults, compute start delay |
+| `firmware/lights.py` | Active-low GPIO. Self-test, status blink, start sequence |
+| `firmware/webserver.py` | One-shot HTTP server, inline UI, `/start`, LED test API |
+| `firmware/wifi_config.py` | Known networks, last SSID, country, BLE-IP-pending flag, legacy creds migration |
+| `firmware/ble_uart.py` | Nordic UART peripheral: PIN, credentials, `START`, IP beacon |
+| `firmware/ble_advertising.py` | Advertising payload helper (MicroPython sample). Leave it alone |
+| `firmware/display.py` | Optional SSD1306 status screens. Failures are swallowed |
+| `firmware/ssd1306.py` | Vendored I2C driver from micropython-ssd1306. Do not restyle |
+| `firmware/onboard_led.py` | Pico W `Pin("LED")` patterns. No-op if the LED pin is missing |
 
-`schematic.svg` matches `SCHEMATIC.md`.
+`docs/schematic.svg` matches `docs/SCHEMATIC.md`.
 
-## Boot flow (`main.py`)
+## Boot flow (`firmware/main.py`)
 
 1. Set the WiFi country from `wifi_country.json` or `config.WIFI_COUNTRY` (default `RO`) via `rp2.country` and `network.country` **before** WLAN init.
 2. `settings.load()` then `LightController()`.
@@ -72,7 +83,7 @@ Web and BLE both compute the pre-start delay with `settings.get_start_delay`:
 
 Defaults in `config.py`: red 1.0 s, random wait 1–3 s, yellow interval 0.5 s, green hold 3.0 s, start delay mode 0 with random 5–20 s (fixed 5 s if mode is 1). A `startlight_config.json` on the Pico overrides these key by key. Missing or invalid JSON falls back to `settings.DEFAULTS`.
 
-## HTTP (`webserver.py`, port 80)
+## HTTP (`firmware/webserver.py`, port 80)
 
 `run_server` binds, listens for **one** client with a 1 s accept timeout, handles it, closes the socket, returns. `SO_REUSEADDR` is set. Bind failure (port in use) returns immediately. The start sequence blocks the ready loop, so HTTP is dead for the whole sequence.
 
@@ -151,7 +162,7 @@ Onboard LED during the BLE wait: on 2 s, off 1 s (`status_ble_tick`). During WiF
 | `wifi_country.json` | `save_wifi_country` | `{"country": "RO"}` |
 | `ble_pending_ip.json` | `set_pending_ip_via_ble` | `{"pending": true/false}` |
 
-All of these are gitignored.
+All of these are gitignored. Sanitized templates (placeholders only) live in `docs/examples/*.json.example`.
 
 ## Status outputs (keep in sync)
 
@@ -167,15 +178,17 @@ All of these are gitignored.
 
 ## Safe change recipes
 
-**Change a default delay.** Edit the constant in `config.py` and the matching key in `settings.DEFAULTS` (it already imports the constants). Existing Picos keep `startlight_config.json` until the web form saves again.
+**Change a default delay.** Edit the constant in `firmware/config.py` and the matching key in `settings.DEFAULTS` (it already imports the constants). Existing Picos keep `startlight_config.json` until the web form saves again.
 
-**Change a pin.** Edit `config.GPIO_PINS` order `[red, yellow1, yellow2, green]` and the matching table in `README.md` / `SCHEMATIC.md`. Update the settings-page checkbox labels in `webserver.py`. Do not invert active-low in software unless the SSR input is rewired.
+**Change a pin.** Edit `config.GPIO_PINS` order `[red, yellow1, yellow2, green]` and the matching table in `README.md` / `docs/SCHEMATIC.md`. Update the settings-page checkbox labels in `firmware/webserver.py`. Do not invert active-low in software unless the SSR input is rewired.
 
 **Add a start command.** Call `get_start_delay` + `lights.run_start_sequence` with the same five timing fields the web path uses. Do not duplicate the phase sleeps.
 
-**Add a web field.** Add the default in `config.py` and `settings.DEFAULTS`, an input in `serve_settings`, and a `_safe_float` / `_safe_int` assignment in the POST branch before `save`.
+**Add a web field.** Add the default in `firmware/config.py` and `settings.DEFAULTS`, an input in `serve_settings`, and a `_safe_float` / `_safe_int` assignment in the POST branch before `save`.
 
-**Add an OLED screen.** Add a `show_*` function that only calls `show_lines`. Catch nothing in callers beyond what `show_lines` already swallows. Never let display init failure break WiFi or the lamps.
+**Add an OLED screen.** Add a `show_*` function in `firmware/display.py` that only calls `show_lines`. Catch nothing in callers beyond what `show_lines` already swallows. Never let display init failure break WiFi or the lamps.
+
+**Never put docs on the Pico.** Keep new markdown, SVG, and large assets under `docs/` or the repo root. Only add or edit `.py` under `firmware/` for device deploy.
 
 ## Out of scope unless the hardware changes
 
