@@ -8,7 +8,8 @@ import json
 
 # Global state - set by /start request
 start_requested = False
-start_delay_value = 5  # seconds, set when /start is called
+start_delay_value = 5  # seconds (legacy); prefer start_plan
+start_plan = None  # timing plan shared with lamps + web viz
 
 
 def get_ip():
@@ -139,9 +140,21 @@ def _css():
         ".check input{width:auto}"
         "#countdown{font-style:italic;font-weight:950;letter-spacing:-3px;"
         "font-size:clamp(64px,22vw,96px);line-height:1;color:var(--lime);"
-        "min-height:1.1em;margin:8px 0}"
+        "min-height:1.1em;margin:8px 0;text-align:center}"
         "#status{color:var(--muted);font-size:13px;font-weight:700;"
-        "letter-spacing:.04em;text-transform:uppercase;margin:0 0 18px}"
+        "letter-spacing:.04em;text-transform:uppercase;margin:0 0 18px;text-align:center}"
+        ".tree{display:flex;flex-direction:column;align-items:center;gap:10px;"
+        "margin:8px auto 18px;padding:16px 20px;background:var(--panel);"
+        "border:1px solid var(--border);width:fit-content}"
+        ".tree .lamp{width:42px;height:42px;border-radius:50%;"
+        "background:#1a1824;border:2px solid var(--border);"
+        "box-shadow:inset 0 0 12px rgba(0,0,0,.5);transition:background .15s,box-shadow .15s,border-color .15s}"
+        ".tree .lamp.red.on{background:#e10600;border-color:#ff6b5a;"
+        "box-shadow:0 0 18px #e10600}"
+        ".tree .lamp.y1.on,.tree .lamp.y2.on{background:#f5c518;border-color:#ffe08a;"
+        "box-shadow:0 0 18px #f5c518}"
+        ".tree .lamp.green.on{background:#00c853;border-color:#7dffb0;"
+        "box-shadow:0 0 22px #00c853}"
         ".flash{color:var(--blue);font-size:13px;font-weight:700;margin:0 0 12px}"
         ".hint{font-size:13px;color:var(--muted);margin:0 0 12px}"
         ".foot{margin-top:28px;font-size:12px;color:var(--muted)}"
@@ -163,7 +176,8 @@ def _i18n_js():
         "'ctrl.lead':'Press START, wait the delay, then red -> yellow -> green. Same timing as Settings.',"
         "'status.ready':'Ready','btn.start':'START sequence',"
         "'status.starting':'Starting...','status.countdown':'Countdown - %s sec',"
-        "'status.racing':'Race started','status.error':'Error: ',"
+        "'status.red':'Red','status.wait':'Hold...','status.yellow':'Yellow',"
+        "'status.go':'GO!','status.done':'Done','status.error':'Error: ',"
         "'flash.saved':'Settings saved.',"
         "'set.h1':'SETTINGS.<br><em>TIMING.<\\/em>',"
         "'set.lead':'WiFi, lamp delays, and per-channel LED test. Same sequence the START button runs.',"
@@ -198,7 +212,8 @@ def _i18n_js():
         "'ctrl.lead':'Apasa START, asteapta delay-ul, apoi rosu -> galben -> verde. Aceleasi timpuri ca la Setari.',"
         "'status.ready':'Pregatit','btn.start':'START secventa',"
         "'status.starting':'Pornire...','status.countdown':'Numaratoare - %s sec',"
-        "'status.racing':'Cursa a inceput','status.error':'Eroare: ',"
+        "'status.red':'Rosu','status.wait':'Asteptare...','status.yellow':'Galben',"
+        "'status.go':'GO!','status.done':'Gata','status.error':'Eroare: ',"
         "'flash.saved':'Setari salvate.',"
         "'set.h1':'SETARI.<br><em>TIMPI.<\\/em>',"
         "'set.lead':'WiFi, timpuri la lumini si test LED pe canal. Aceeasi secventa ca butonul START.',"
@@ -384,25 +399,49 @@ def serve_control(show_saved=False):
         "<p class=\"lead\" data-i18n=\"ctrl.lead\">Apasa START, asteapta delay-ul, "
         "apoi rosu -&gt; galben -&gt; verde.</p>"
         + flash
-        + "<div id=\"countdown\" aria-live=\"polite\"></div>"
+        + "<div class=\"tree\" id=\"tree\" aria-hidden=\"true\">"
+        "<div class=\"lamp red\" id=\"lamp0\"></div>"
+        "<div class=\"lamp y1\" id=\"lamp1\"></div>"
+        "<div class=\"lamp y2\" id=\"lamp2\"></div>"
+        "<div class=\"lamp green\" id=\"lamp3\"></div>"
+        "</div>"
+        "<div id=\"countdown\" aria-live=\"polite\"></div>"
         "<div id=\"status\" data-i18n=\"status.ready\">Pregatit</div>"
         "<button class=\"btn\" id=\"startBtn\" type=\"button\" onclick=\"startRace()\" "
         "data-i18n=\"btn.start\">START secventa</button>"
         "<script>"
+        "function sleep(s){return new Promise(function(r){setTimeout(r,Math.round(s*1000))})}"
+        "function setLamps(on){for(var i=0;i<4;i++){"
+        "var el=document.getElementById('lamp'+i);"
+        "if(el){if(on[i])el.classList.add('on');else el.classList.remove('on')}}}"
         "async function startRace(){"
         "var btn=document.getElementById('startBtn');"
         "var cd=document.getElementById('countdown');"
         "var st=document.getElementById('status');"
         "btn.disabled=true;st.removeAttribute('data-i18n');"
+        "setLamps([0,0,0,0]);cd.textContent='';"
         "st.textContent=I18N.t('status.starting');"
         "try{var r=await fetch('/start');var j=await r.json();"
-        "if(j.ok){st.textContent=I18N.tf('status.countdown',j.delay);"
-        "for(var i=j.delay;i>=0;i--){cd.textContent=i;"
-        "await new Promise(function(x){setTimeout(x,1000)})}"
-        "cd.textContent='GO!';st.textContent=I18N.t('status.racing');"
-        "await new Promise(function(x){setTimeout(x,3000)})}"
-        "}catch(e){st.textContent=I18N.t('status.error')+e}"
-        "cd.textContent='';st.setAttribute('data-i18n','status.ready');"
+        "if(j.ok){"
+        "var d=j.delay|0;"
+        "for(var i=d;i>=1;i--){cd.textContent=i;"
+        "st.textContent=I18N.tf('status.countdown',i);await sleep(1)}"
+        "cd.textContent='';"
+        "setLamps([1,0,0,0]);st.textContent=I18N.t('status.red');"
+        "await sleep(j.red_duration);"
+        "st.textContent=I18N.t('status.wait');await sleep(j.random_wait);"
+        "setLamps([1,1,0,0]);st.textContent=I18N.t('status.yellow');"
+        "await sleep(j.yellow_interval);"
+        "setLamps([1,1,1,0]);st.textContent=I18N.t('status.yellow');"
+        "await sleep(j.yellow_interval);"
+        "setLamps([1,1,1,1]);cd.textContent='GO!';"
+        "st.textContent=I18N.t('status.go');"
+        "await sleep(j.green_off_delay);"
+        "setLamps([0,0,0,0]);cd.textContent='';"
+        "st.textContent=I18N.t('status.done');await sleep(0.6)"
+        "}}catch(e){st.textContent=I18N.t('status.error')+e}"
+        "setLamps([0,0,0,0]);cd.textContent='';"
+        "st.setAttribute('data-i18n','status.ready');"
         "st.textContent=I18N.t('status.ready');btn.disabled=false}"
         "</script>"
     )
@@ -524,14 +563,36 @@ def handle_request(conn, settings, light_controller):
                         print("[Web] Settings save error:", e)
             response = serve_settings(settings)
         elif path == "/start":
-            global start_delay_value
+            global start_delay_value, start_plan
+            import random
             from settings import get_start_delay
-            delay = get_start_delay(settings)
+            delay = int(get_start_delay(settings))
+            rand_wait = random.uniform(
+                settings["random_wait_min"], settings["random_wait_max"]
+            )
+            # Same numbers for Pico lamps and browser tree viz
+            start_plan = {
+                "ok": True,
+                "delay": delay,
+                "red_duration": float(settings["red_duration"]),
+                "random_wait": float(rand_wait),
+                "yellow_interval": float(settings["yellow_interval"]),
+                "green_off_delay": float(settings["green_off_delay"]),
+            }
             start_requested = True
             start_delay_value = delay
-            print("[Web] Start requested, delay=%ds" % int(delay))
+            print(
+                "[Web] Start plan delay=%ds red=%.2f wait=%.2f y=%.2f g=%.2f"
+                % (
+                    delay,
+                    start_plan["red_duration"],
+                    start_plan["random_wait"],
+                    start_plan["yellow_interval"],
+                    start_plan["green_off_delay"],
+                )
+            )
             content_type = "application/json"
-            response = json.dumps({"ok": True, "delay": int(delay)})
+            response = json.dumps(start_plan)
         elif path == "/api/settings":
             content_type = "application/json"
             response = json.dumps(settings)
@@ -617,6 +678,12 @@ def is_start_requested():
 def get_start_delay_value():
     global start_delay_value
     return start_delay_value
+
+
+def get_start_plan():
+    """Timing plan from last /start (shared with lamp sequence)."""
+    global start_plan
+    return start_plan
 
 
 def clear_start_requested():

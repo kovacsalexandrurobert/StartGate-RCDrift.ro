@@ -85,10 +85,12 @@ class LightController:
             time.sleep(interval)
 
     def run_start_sequence(self, start_delay, red_dur, rand_min, rand_max,
-                           yellow_interval, green_off_delay, callback=None):
+                           yellow_interval, green_off_delay, callback=None,
+                           rand_wait=None):
         """
         Run the drift/F1 style start sequence.
         start_delay: seconds to wait after button push
+        rand_wait: if set, use this hold after red (so web UI can match); else random
         callback: optional func(phase, countdown_sec) for UI updates
         """
         print("[Light] Start sequence: delay=%ds red=%.1fs rand=%.1f-%.1fs" % (start_delay, red_dur, rand_min, rand_max))
@@ -110,8 +112,11 @@ class LightController:
         self.set_light(RED, True)
         time.sleep(red_dur)
 
-        # Phase 3: Random wait (1-3 sec typical)
-        wait = random.uniform(rand_min, rand_max)
+        # Phase 3: Random wait (1-3 sec typical), or fixed value from /start plan
+        if rand_wait is None:
+            wait = random.uniform(rand_min, rand_max)
+        else:
+            wait = float(rand_wait)
         print("[Light] Phase 3: Random wait %.1fs" % wait)
         time.sleep(wait)
 

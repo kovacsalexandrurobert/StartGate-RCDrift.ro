@@ -109,14 +109,14 @@ No authentication. The server is only as private as the LAN.
 | `GET /`, `GET /control` | Remote page. `?saved=1` shows a “Settings saved” banner |
 | `GET /settings` | Timing + WiFi form, plus per-channel LED test checkboxes |
 | `POST /settings` | Saves fields, responds `303` to `/?saved=1` |
-| `GET /start` | Sets `start_requested`, returns `{"ok": true, "delay": <int seconds>}` |
+| `GET /start` | Builds a timing **plan** (delay, red, random wait, yellow interval, green hold), sets `start_requested`, returns that plan as JSON |
 | `GET /api/settings` | Current settings JSON. No WiFi password |
 | `GET /api/led?n=0..3&on=0\|1` | Holds that output on or off. `n` outside 0–3 returns `{"ok": false}` |
 | anything else | HTML 404 |
 
 POST `/settings` WiFi: a non-empty SSID is written with `wifi_config.save_credentials`. A blank password keeps the stored password. This does **not** reconnect or reboot; the new network is used on the next boot. Timing fields use `_safe_float` / `_safe_int` and fall back to the hardcoded defaults inside the handler (red 1, wait 1–3, yellow 0.5, green 3, delay mode 0, fixed 5, random 5–20), then `settings.save`.
 
-The remote page countdown is **client-side**. It waits `delay` seconds, shows `GO!` for 3 s, and re-enables the button. It does not follow red, random wait, or yellow. Those keep running on the Pico after `/start` has already returned.
+The remote page animates a **lamp tree** from the `/start` plan (same `random_wait` the Pico uses). Countdown matches `int(delay)` 1 s ticks, then red → hold → yellow 1 → yellow 2 → green/`GO!` → off. HTTP is still blocked on the Pico for the whole sequence; the browser does not poll lamp state.
 
 UI language is **client-side RO/EN** (`localStorage` key `sl_lang`, default `ro`). The language switcher in the header applies to Remote, Settings, and 404. Keep copy in `_i18n_js()` dictionaries; mark strings with `data-i18n` / `data-i18n-html` / `data-i18n-placeholder`.
 

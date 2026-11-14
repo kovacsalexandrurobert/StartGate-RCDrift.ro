@@ -53,7 +53,13 @@ from wifi_config import (
     get_networks_to_try,
     record_successful_connection,
 )
-from webserver import run_server, is_start_requested, get_start_delay_value, clear_start_requested
+from webserver import (
+    run_server,
+    is_start_requested,
+    get_start_delay_value,
+    get_start_plan,
+    clear_start_requested,
+)
 from onboard_led import (
     status_not_connected,
     status_connecting_tick,
@@ -308,16 +314,28 @@ def main():
         while True:
             if is_start_requested():
                 print("[Start] Sequence triggered")
+                plan = get_start_plan()
                 clear_start_requested()
-                delay = get_start_delay_value()
-                lights.run_start_sequence(
-                    start_delay=delay,
-                    red_dur=settings["red_duration"],
-                    rand_min=settings["random_wait_min"],
-                    rand_max=settings["random_wait_max"],
-                    yellow_interval=settings["yellow_interval"],
-                    green_off_delay=settings["green_off_delay"],
-                )
+                if plan:
+                    lights.run_start_sequence(
+                        start_delay=plan["delay"],
+                        red_dur=plan["red_duration"],
+                        rand_min=settings["random_wait_min"],
+                        rand_max=settings["random_wait_max"],
+                        yellow_interval=plan["yellow_interval"],
+                        green_off_delay=plan["green_off_delay"],
+                        rand_wait=plan["random_wait"],
+                    )
+                else:
+                    delay = get_start_delay_value()
+                    lights.run_start_sequence(
+                        start_delay=delay,
+                        red_dur=settings["red_duration"],
+                        rand_min=settings["random_wait_min"],
+                        rand_max=settings["random_wait_max"],
+                        yellow_interval=settings["yellow_interval"],
+                        green_off_delay=settings["green_off_delay"],
+                    )
 
             run_server(settings, lights)
             time.sleep_ms(50)
