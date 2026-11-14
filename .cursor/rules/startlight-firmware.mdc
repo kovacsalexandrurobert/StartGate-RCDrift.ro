@@ -9,7 +9,7 @@ Read `AGENTS.md` before changing behavior. Deployable code lives only in `firmwa
 
 Git is trunk-based: never push to `main`. Use `feature/<name>` (or `fix/` / `docs/` / `chore/`), open a PR, squash or rebase merge. See `docs/CONTRIBUTING.md`.
 
-This is MicroPython on a Raspberry Pi Pico W. There is no pip, no asyncio, and no CPython-only stdlib. On-device imports are flat (`from lights import …`) because `.py` files are copied to the Pico root.
+This is MicroPython on a Raspberry Pi **Pico 2 W** (preferred) or Pico W. Flash `RPI_PICO2_W` or `RPI_PICO_W` UF2 to match the hardware — UF2s are not interchangeable; `.py` app code is. There is no pip, no asyncio, and no CPython-only stdlib. On-device imports are flat (`from lights import …`) because `.py` files are copied to the Pico root.
 
 ## Invariants
 

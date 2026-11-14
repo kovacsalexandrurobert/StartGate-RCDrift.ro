@@ -2,6 +2,8 @@
 
 ## Overview
 
+Target board: **Raspberry Pi Pico 2 W** (RP2350) or original **Pico W** (RP2040). User GPIO and power pins used here are the same on both.
+
 Single set of 4 GPIO pins drives all lights. Wire multiple light sets in **parallel** per color—each color shares one SSR. All red lights connect to SSR1, all yellow1 to SSR2, etc.
 
 ---
@@ -47,7 +49,7 @@ Single set of 4 GPIO pins drives all lights. Wire multiple light sets in **paral
 
 ## Full Wiring Table
 
-| Pico W Pin | GPIO | Function | Connect To |
+| Pico / Pico 2 W pin | GPIO | Function | Connect To |
 |------------|------|----------|------------|
 | Pin 4      | GP2  | Red      | SSR 1 Input (via 220R) |
 | Pin 5      | GP3  | Yellow 1 | SSR 2 Input (via 220R) |
@@ -61,7 +63,7 @@ Single set of 4 GPIO pins drives all lights. Wire multiple light sets in **paral
 
 ## Power and GND
 
-**Pico W power (5V):**
+**Pico / Pico 2 W power (5V):**
 - Connect 5V DC to **VBUS (pin 40)** and GND to **GND (pin 38)**
 - Use USB cable, or 5V adapter (2.5mm barrel, or screw terminal)
 

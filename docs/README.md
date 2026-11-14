@@ -9,7 +9,7 @@ GitHub Pages is served from this folder (`index.html` + `schematic.svg`). Site: 
 | [index.html](index.html) | Public schematic page (GitHub Pages) |
 | [schematic.svg](schematic.svg) | Wiring diagram embedded on the page |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Trunk-based workflow: feature branch → PR → `main` |
-| [DEPLOY.md](DEPLOY.md) | What to copy to the Pico (`.py` only) |
+| [DEPLOY.md](DEPLOY.md) | Flash Pico 2 W / Pico W and copy `.py` only |
 | [examples/](examples/) | Placeholder shapes for on-device JSON (no real passwords) |
 | [SCHEMATIC.md](SCHEMATIC.md) | Wiring, GPIO, SSR, optional OLED |
 | [../AGENTS.md](../AGENTS.md) | Behavior contract for AI agents |

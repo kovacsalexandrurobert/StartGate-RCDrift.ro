@@ -32,12 +32,12 @@ START_DELAY_RANDOM_MAX = 20
 # Config file path
 CONFIG_FILE = "startlight_config.json"
 
-# WiFi country code (required for some Pico W firmware - set before WLAN init)
+# WiFi country code (set before WLAN init on Pico W / Pico 2 W)
 # Default for Romania; can be overridden via BLE on first init
 # Use 2-letter ISO code: "RO", "US", "GB", "DE", etc.
 WIFI_COUNTRY = "RO"
 
-# Set False if wlan.scan() hangs on your Pico W (connect will still work)
+# Set False if wlan.scan() hangs on your board (connect will still work)
 WIFI_SCAN_ENABLED = False
 
 # Optional status display (SSD1306 128x64 I2C OLED)

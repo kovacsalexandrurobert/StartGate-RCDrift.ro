@@ -1,15 +1,16 @@
 """
-Pico W onboard LED for wireless connection debug status
+Onboard LED for wireless connection debug status.
+
+Pico W and Pico 2 W: Pin("LED") drives the LED through the CYW43.
 """
 
 import machine
 import time
 
-# Pico W: Pin("LED") controls onboard LED via CYW43
 try:
     _led = machine.Pin("LED", machine.Pin.OUT)
 except Exception:
-    _led = None  # Fallback if LED not available (e.g. original Pico)
+    _led = None  # Missing on non-wireless Pico boards
 
 
 def _safe(value):

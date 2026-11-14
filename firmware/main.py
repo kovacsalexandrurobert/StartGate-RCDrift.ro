@@ -1,6 +1,6 @@
 """
 Start Light - Wireless Remote Controlled Race Start System
-Raspberry Pi Pico W - MicroPython
+Raspberry Pi Pico 2 W (preferred) or Pico W - MicroPython
 
 Boot sequence:
 1. Self-test: cycle all light sets
@@ -10,13 +10,22 @@ Boot sequence:
    - Fail: red blink 2x, 3s delay, retry (or BLE for credentials)
 3. If WiFi fails repeatedly: enable BLE, wait for credentials
 4. Web server: settings + remote control
+
+Flash board-matched UF2: RPI_PICO2_W or RPI_PICO_W. Do not flash Pico W
+firmware onto a Pico 2 W (or the reverse). Application .py files are shared.
 """
 
 import time
 import machine
 import network
 
-# Set country before WLAN init (helps Pico W WiFi on some firmware)
+try:
+    from board import log_boot
+    log_boot()
+except Exception as e:
+    print("[Board] id failed:", e)
+
+# Set country before WLAN init (helps CYW43 WiFi on some firmware)
 # Uses value from BLE (wifi_country.json) or config default
 try:
     from wifi_config import get_wifi_country
@@ -73,7 +82,7 @@ def connect_wifi(tick_callback=None):
     wlan.active(True)
     time.sleep(0.5)  # Let CYW43 chip initialize
 
-    # Scan for available networks (can hang on some Pico W firmware - set WIFI_SCAN_ENABLED=False in config)
+    # Scan for available networks (can hang on some builds - set WIFI_SCAN_ENABLED=False in config)
     scan_results = None
     try:
         from config import WIFI_SCAN_ENABLED
@@ -155,7 +164,7 @@ def run_ble_credential_mode(lights, settings):
     print("[BLE] WiFi failed 3x - enabling BLE for new credentials...")
     lights.blink_status("red", 2, 0.3)
     time.sleep(1)
-    # Deactivate WiFi before BLE (they can't run together on Pico W)
+    # Deactivate WiFi before BLE (one CYW43 radio — Pico W and Pico 2 W)
     try:
         wlan = network.WLAN(network.STA_IF)
         wlan.active(False)
