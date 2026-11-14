@@ -63,132 +63,208 @@ def _get_wifi_password():
     return ""  # Never show password in HTML
 
 
+def _css():
+    """Shared UI — visual tokens aligned with www.rcdrift.ro (compact for Pico RAM)."""
+    return (
+        ":root{--bg:#0a0910;--panel:#13111d;--panel2:#181522;--border:#292432;"
+        "--muted:#a29cab;--pink:#f34ebc;--purple:#a47bfa;--blue:#48ccfa;"
+        "--white:#f6f3fb;--lime:#c5ff63;color-scheme:dark}"
+        "*{box-sizing:border-box}"
+        "body{margin:0;background:var(--bg);color:var(--white);"
+        "font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;"
+        "-webkit-font-smoothing:antialiased}"
+        ".topline{border-bottom:1px solid var(--border);padding:8px 16px;"
+        "font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--muted);"
+        "display:flex;justify-content:space-between;gap:12px}"
+        ".topline i{display:inline-block;width:7px;height:7px;border-radius:50%;"
+        "background:var(--lime);margin-right:8px;vertical-align:middle}"
+        ".wrap{max-width:440px;margin:0 auto;padding:18px 16px 40px}"
+        ".brand{display:inline-flex;align-items:baseline;font-style:italic;"
+        "font-weight:950;font-size:28px;letter-spacing:-1.4px;line-height:1;"
+        "text-decoration:none;color:var(--white)}"
+        ".brand .sl{color:var(--blue);letter-spacing:-8px;margin-right:12px;"
+        "font-size:34px;transform:skew(-14deg);text-shadow:4px 0 0 var(--pink)}"
+        ".brand .hi{color:var(--pink)}"
+        ".brand small{color:#aea4bd;font-size:17px;font-weight:700;letter-spacing:-1px}"
+        "nav{display:flex;gap:14px;margin:16px 0 8px;font-size:12px;font-weight:700}"
+        "nav a{color:var(--muted);text-decoration:none;padding-bottom:4px;"
+        "border-bottom:2px solid transparent}"
+        "nav a.on{color:var(--white);border-color:var(--pink)}"
+        "h1{font-style:italic;font-weight:950;letter-spacing:-2px;line-height:.95;"
+        "font-size:clamp(42px,12vw,58px);margin:18px 0 8px}"
+        "h1 em{color:var(--pink);font-style:italic}"
+        ".lead{color:var(--muted);margin:0 0 22px;max-width:28rem}"
+        ".panel{background:var(--panel);border:1px solid var(--border);padding:16px;"
+        "margin:0 0 16px}"
+        ".panel h2{margin:0 0 10px;font-size:12px;letter-spacing:.08em;"
+        "text-transform:uppercase;color:var(--muted);font-weight:750}"
+        "label{display:block;margin:12px 0 4px;font-size:12px;font-weight:700;"
+        "color:var(--muted)}"
+        "input,select{width:100%;padding:11px 12px;background:var(--panel2);"
+        "border:1px solid var(--border);color:var(--white);font:inherit}"
+        "input:focus,select:focus{outline:1px solid var(--pink);border-color:var(--pink)}"
+        ".btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;"
+        "min-height:46px;padding:12px 20px;border:1px solid var(--pink);"
+        "background:var(--pink);color:#110b16;font-size:12px;font-weight:750;"
+        "text-decoration:none;cursor:pointer;width:100%}"
+        ".btn:hover{filter:brightness(1.05)}"
+        ".btn:disabled{opacity:.45;cursor:not-allowed;filter:none}"
+        ".btn.ghost{background:#291324;border-color:#78355f;color:var(--white)}"
+        ".check{display:flex;align-items:center;gap:10px;margin:10px 0;"
+        "font-size:14px;color:var(--white)}"
+        ".check input{width:auto}"
+        "#countdown{font-style:italic;font-weight:950;letter-spacing:-3px;"
+        "font-size:clamp(64px,22vw,96px);line-height:1;color:var(--lime);"
+        "min-height:1.1em;margin:8px 0}"
+        "#status{color:var(--muted);font-size:13px;font-weight:700;"
+        "letter-spacing:.04em;text-transform:uppercase;margin:0 0 18px}"
+        ".flash{color:var(--blue);font-size:13px;font-weight:700;margin:0 0 12px}"
+        ".hint{font-size:13px;color:var(--muted);margin:0 0 12px}"
+        ".foot{margin-top:28px;font-size:12px;color:var(--muted)}"
+        ".foot a{color:var(--blue)}"
+    )
+
+
+def _shell(title, nav, body):
+    """Page chrome matching RCDrift.ro topline + // brand."""
+    c_on = ' class="on"' if nav == "control" else ""
+    s_on = ' class="on"' if nav == "settings" else ""
+    return (
+        "<!DOCTYPE html><html lang=\"en\"><head>"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        "<meta name=\"theme-color\" content=\"#0a0910\">"
+        "<title>" + title + "</title><style>" + _css() + "</style></head><body>"
+        "<div class=\"topline\"><span>START LIGHT / CONTROL</span>"
+        "<span class=\"top-right\"><i></i>RCDRIFT.RO</span></div>"
+        "<div class=\"wrap\">"
+        "<a class=\"brand\" href=\"/\"><span class=\"sl\">//</span>"
+        "<span>START<span class=\"hi\">LIGHT</span><small>.ro</small></span></a>"
+        "<nav aria-label=\"Pages\">"
+        "<a href=\"/\"" + c_on + ">Remote</a>"
+        "<a href=\"/settings\"" + s_on + ">Settings</a>"
+        "</nav>"
+        + body +
+        "<p class=\"foot\">Style matched to "
+        "<a href=\"https://www.rcdrift.ro\" target=\"_blank\" rel=\"noopener\">rcdrift.ro</a>"
+        "</p></div></body></html>"
+    )
+
+
 def serve_settings(settings):
     """Generate settings page HTML"""
-    return """<!DOCTYPE html>
-<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Start Light - Settings</title>
-<style>
-body{font-family:sans-serif;max-width:400px;margin:20px auto;padding:10px;background:#1a1a2e;color:#eee;}
-h1{color:#e94560;}
-input,select,button{width:100%;padding:10px;margin:5px 0;border-radius:5px;border:1px solid #333;}
-button{background:#e94560;color:#fff;border:none;cursor:pointer;font-size:16px;}
-button:hover{background:#c73e54;}
-a{color:#0f3460;color:#4fc3f7;}
-label{display:block;margin-top:10px;}
-</style></head><body>
-<h1>Start Light Settings</h1>
-<form method="POST" action="/settings">
-<label>WiFi SSID:</label>
-<input type="text" name="wifi_ssid" value=""" + html_escape(_get_wifi_ssid()) + """ placeholder="Network name">
-<label>WiFi Password:</label>
-<input type="password" name="wifi_password" value=""" + html_escape(_get_wifi_password()) + """ placeholder="Leave blank to keep current">
-<label>Red light duration (sec):</label>
-<input type="number" name="red_duration" step="0.1" value=""" + str(settings["red_duration"]) + """ min="0.5" max="5">
-<label>Random wait min (sec):</label>
-<input type="number" name="random_wait_min" step="0.1" value=""" + str(settings["random_wait_min"]) + """ min="0" max="10">
-<label>Random wait max (sec):</label>
-<input type="number" name="random_wait_max" step="0.1" value=""" + str(settings["random_wait_max"]) + """ min="0" max="10">
-<label>Yellow interval (sec):</label>
-<input type="number" name="yellow_interval" step="0.1" value=""" + str(settings["yellow_interval"]) + """ min="0.1" max="2">
-<label>Green off delay (sec):</label>
-<input type="number" name="green_off_delay" step="0.1" value=""" + str(settings["green_off_delay"]) + """ min="1" max="10">
-<label>Start delay mode:</label>
-<select name="start_delay_mode">
-<option value="0" """ + ("selected" if settings["start_delay_mode"]==0 else "") + """>Random (5-20 sec)</option>
-<option value="1" """ + ("selected" if settings["start_delay_mode"]==1 else "") + """>Fixed</option>
-</select>
-<label>Fixed start delay (sec) - when fixed mode:</label>
-<input type="number" name="start_delay_fixed" value=""" + str(settings["start_delay_fixed"]) + """ min="1" max="60">
-<label>Random delay min (sec):</label>
-<input type="number" name="start_delay_random_min" value=""" + str(settings["start_delay_random_min"]) + """ min="1" max="60">
-<label>Random delay max (sec):</label>
-<input type="number" name="start_delay_random_max" value=""" + str(settings["start_delay_random_max"]) + """ min="1" max="60">
-<button type="submit">Save Settings</button>
-</form>
-<h2 style="margin-top:24px;">LED test</h2>
-<p style="font-size:14px;color:#aaa;">Each output stays <strong>on</strong> while checked, <strong>off</strong> when unchecked (SSR / active-low).</p>
-<label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="ledTest0" onchange="ledTest(0,this.checked)"> Red (GP2)</label>
-<label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="ledTest1" onchange="ledTest(1,this.checked)"> Yellow 1 (GP3)</label>
-<label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="ledTest2" onchange="ledTest(2,this.checked)"> Yellow 2 (GP4)</label>
-<label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="ledTest3" onchange="ledTest(3,this.checked)"> Green (GP5)</label>
-<button type="button" onclick="ledTestAllOff()" style="margin-top:10px;background:#333;">All LEDs off</button>
-<p id="ledTestMsg" style="font-size:13px;color:#888;"></p>
-<script>
-async function ledTest(n,on){
-  var msg=document.getElementById('ledTestMsg');
-  msg.textContent='...';
-  try{
-    var r=await fetch('/api/led?n='+n+'&on='+(on?1:0));
-    var j=await r.json();
-    msg.textContent=j.ok?'OK':'Error';
-    setTimeout(function(){msg.textContent='';},1500);
-  }catch(e){msg.textContent='Failed: '+e;}
-}
-async function ledTestAllOff(){
-  for(var i=0;i<4;i++){
-    document.getElementById('ledTest'+i).checked=false;
-    await fetch('/api/led?n='+i+'&on=0');
-  }
-  var msg=document.getElementById('ledTestMsg');
-  msg.textContent='All off';
-  setTimeout(function(){msg.textContent='';},1500);
-}
-</script>
-<p><a href="/">Remote Control</a></p>
-</body></html>"""
+    mode0 = "selected" if settings["start_delay_mode"] == 0 else ""
+    mode1 = "selected" if settings["start_delay_mode"] == 1 else ""
+    body = (
+        "<h1>SETĂRI.<br><em>TIMING.</em></h1>"
+        "<p class=\"lead\">WiFi, lamp delays, and per-channel LED test. "
+        "Same sequence the START button runs.</p>"
+        "<form method=\"POST\" action=\"/settings\">"
+        "<div class=\"panel\"><h2>WiFi</h2>"
+        "<label>SSID</label>"
+        "<input type=\"text\" name=\"wifi_ssid\" value=\""
+        + html_escape(_get_wifi_ssid())
+        + "\" placeholder=\"Network name\">"
+        "<label>Password</label>"
+        "<input type=\"password\" name=\"wifi_password\" value=\""
+        + html_escape(_get_wifi_password())
+        + "\" placeholder=\"Leave blank to keep current\">"
+        "</div>"
+        "<div class=\"panel\"><h2>Lamp sequence</h2>"
+        "<label>Red duration (sec)</label>"
+        "<input type=\"number\" name=\"red_duration\" step=\"0.1\" min=\"0.5\" max=\"5\" value=\""
+        + str(settings["red_duration"]) + "\">"
+        "<label>Random wait min (sec)</label>"
+        "<input type=\"number\" name=\"random_wait_min\" step=\"0.1\" min=\"0\" max=\"10\" value=\""
+        + str(settings["random_wait_min"]) + "\">"
+        "<label>Random wait max (sec)</label>"
+        "<input type=\"number\" name=\"random_wait_max\" step=\"0.1\" min=\"0\" max=\"10\" value=\""
+        + str(settings["random_wait_max"]) + "\">"
+        "<label>Yellow interval (sec)</label>"
+        "<input type=\"number\" name=\"yellow_interval\" step=\"0.1\" min=\"0.1\" max=\"2\" value=\""
+        + str(settings["yellow_interval"]) + "\">"
+        "<label>Green off delay (sec)</label>"
+        "<input type=\"number\" name=\"green_off_delay\" step=\"0.1\" min=\"1\" max=\"10\" value=\""
+        + str(settings["green_off_delay"]) + "\">"
+        "</div>"
+        "<div class=\"panel\"><h2>Start delay</h2>"
+        "<label>Mode</label>"
+        "<select name=\"start_delay_mode\">"
+        "<option value=\"0\" " + mode0 + ">Random (5–20 sec)</option>"
+        "<option value=\"1\" " + mode1 + ">Fixed</option>"
+        "</select>"
+        "<label>Fixed delay (sec)</label>"
+        "<input type=\"number\" name=\"start_delay_fixed\" min=\"1\" max=\"60\" value=\""
+        + str(settings["start_delay_fixed"]) + "\">"
+        "<label>Random delay min (sec)</label>"
+        "<input type=\"number\" name=\"start_delay_random_min\" min=\"1\" max=\"60\" value=\""
+        + str(settings["start_delay_random_min"]) + "\">"
+        "<label>Random delay max (sec)</label>"
+        "<input type=\"number\" name=\"start_delay_random_max\" min=\"1\" max=\"60\" value=\""
+        + str(settings["start_delay_random_max"]) + "\">"
+        "</div>"
+        "<button class=\"btn\" type=\"submit\">Save settings</button>"
+        "</form>"
+        "<div class=\"panel\" style=\"margin-top:16px\"><h2>LED test</h2>"
+        "<p class=\"hint\">Checked = ON (active-low SSR). A start sequence can clear lamps "
+        "while boxes stay checked.</p>"
+        "<label class=\"check\"><input type=\"checkbox\" id=\"ledTest0\" "
+        "onchange=\"ledTest(0,this.checked)\"> Red (GP2)</label>"
+        "<label class=\"check\"><input type=\"checkbox\" id=\"ledTest1\" "
+        "onchange=\"ledTest(1,this.checked)\"> Yellow 1 (GP3)</label>"
+        "<label class=\"check\"><input type=\"checkbox\" id=\"ledTest2\" "
+        "onchange=\"ledTest(2,this.checked)\"> Yellow 2 (GP4)</label>"
+        "<label class=\"check\"><input type=\"checkbox\" id=\"ledTest3\" "
+        "onchange=\"ledTest(3,this.checked)\"> Green (GP5)</label>"
+        "<button type=\"button\" class=\"btn ghost\" style=\"margin-top:12px\" "
+        "onclick=\"ledTestAllOff()\">All LEDs off</button>"
+        "<p id=\"ledTestMsg\" class=\"hint\"></p></div>"
+        "<script>"
+        "async function ledTest(n,on){var m=document.getElementById('ledTestMsg');"
+        "m.textContent='...';try{var r=await fetch('/api/led?n='+n+'&on='+(on?1:0));"
+        "var j=await r.json();m.textContent=j.ok?'OK':'Error';"
+        "setTimeout(function(){m.textContent='';},1500)}catch(e){m.textContent='Failed: '+e}}"
+        "async function ledTestAllOff(){for(var i=0;i<4;i++){"
+        "document.getElementById('ledTest'+i).checked=false;"
+        "await fetch('/api/led?n='+i+'&on=0')}var m=document.getElementById('ledTestMsg');"
+        "m.textContent='All off';setTimeout(function(){m.textContent='';},1500)}"
+        "</script>"
+    )
+    return _shell("Start Light — Settings", "settings", body)
 
 
 def serve_control(show_saved=False):
     """Generate remote control page HTML"""
-    saved_msg = '<p id="savedMsg" style="color:#4fc3f7;margin:10px;">Settings saved!</p><script>setTimeout(function(){var m=document.getElementById("savedMsg");if(m)m.style.display="none";},4000);</script>' if show_saved else ""
-    return """<!DOCTYPE html>
-<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Start Light - Remote</title>
-<style>
-body{font-family:sans-serif;text-align:center;padding:20px;background:#1a1a2e;color:#eee;}
-h1{color:#e94560;}
-#startBtn{width:200px;height:200px;border-radius:50%;font-size:24px;font-weight:bold;
-background:#e94560;color:#fff;border:none;cursor:pointer;margin:20px;}
-#startBtn:hover{background:#c73e54;}
-#startBtn:disabled{background:#555;cursor:not-allowed;}
-#countdown{font-size:48px;margin:20px;color:#4fc3f7;}
-#status{font-size:18px;margin:10px;}
-a{color:#4fc3f7;}
-</style></head><body>
-<h1>Start Light</h1>
-""" + saved_msg + """
-<div id="countdown"></div>
-<div id="status">Ready</div>
-<button id="startBtn" onclick="startRace()">START</button>
-<p><a href="/settings">Settings</a></p>
-<script>
-async function startRace(){
-  var btn=document.getElementById('startBtn');
-  var cd=document.getElementById('countdown');
-  var st=document.getElementById('status');
-  btn.disabled=true;
-  st.textContent='Starting...';
-  try{
-    var r=await fetch('/start');
-    var j=await r.json();
-    if(j.ok){
-      st.textContent='Countdown: '+j.delay+' sec';
-      for(var i=j.delay;i>=0;i--){
-        cd.textContent=i;
-        await new Promise(x=>setTimeout(x,1000));
-      }
-      cd.textContent='GO!';
-      st.textContent='Race started!';
-      await new Promise(x=>setTimeout(x,3000));
-    }
-  }catch(e){st.textContent='Error: '+e;}
-  cd.textContent='';
-  st.textContent='Ready';
-  btn.disabled=false;
-}
-</script>
-</body></html>"""
+    flash = (
+        "<p class=\"flash\" id=\"savedMsg\">Settings saved.</p>"
+        "<script>setTimeout(function(){var m=document.getElementById('savedMsg');"
+        "if(m)m.style.display='none'},4000)</script>"
+    ) if show_saved else ""
+    body = (
+        "<h1>PE LINIE.<br>DE-A<br><em>LATUL.</em></h1>"
+        "<p class=\"lead\">Arm the tree, wait the delay, then red → yellow → green. "
+        "Same timing as Settings.</p>"
+        + flash
+        + "<div id=\"countdown\" aria-live=\"polite\"></div>"
+        "<div id=\"status\">Ready</div>"
+        "<button class=\"btn\" id=\"startBtn\" type=\"button\" onclick=\"startRace()\">"
+        "START sequence</button>"
+        "<script>"
+        "async function startRace(){"
+        "var btn=document.getElementById('startBtn');"
+        "var cd=document.getElementById('countdown');"
+        "var st=document.getElementById('status');"
+        "btn.disabled=true;st.textContent='Starting…';"
+        "try{var r=await fetch('/start');var j=await r.json();"
+        "if(j.ok){st.textContent='Countdown · '+j.delay+' sec';"
+        "for(var i=j.delay;i>=0;i--){cd.textContent=i;"
+        "await new Promise(function(x){setTimeout(x,1000)})}"
+        "cd.textContent='GO!';st.textContent='Race started';"
+        "await new Promise(function(x){setTimeout(x,3000)})}"
+        "}catch(e){st.textContent='Error: '+e}"
+        "cd.textContent='';st.textContent='Ready';btn.disabled=false}"
+        "</script>"
+    )
+    return _shell("Start Light — Remote", "control", body)
 
 
 def _unquote(s):
@@ -333,7 +409,15 @@ def handle_request(conn, settings, light_controller):
                 content_type = "application/json"
                 response = json.dumps({"ok": False, "error": str(e)})
         else:
-            response = "<h1>404</h1><p><a href='/'>Control</a> | <a href='/settings'>Settings</a></p>"
+            response = _shell(
+                "Start Light — 404",
+                "control",
+                "<h1>404.<br><em>MISS.</em></h1>"
+                "<p class=\"lead\">No page here. Back to remote or settings.</p>"
+                "<a class=\"btn\" href=\"/\">Remote control</a>"
+                "<p style=\"height:10px\"></p>"
+                "<a class=\"btn ghost\" href=\"/settings\">Settings</a>",
+            )
 
         conn.send(b"HTTP/1.1 200 OK\r\nContent-Type: " + content_type.encode() + b"\r\nConnection: close\r\n\r\n")
         conn.send(response.encode() if isinstance(response, str) else response)
