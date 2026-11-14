@@ -7,6 +7,9 @@ GitHub Pages is served from this folder (`index.html` + `schematic.svg`). Site: 
 | File | Audience |
 |------|----------|
 | [index.html](index.html) | Public schematic page (GitHub Pages) |
+| [assets/startlight-logo.svg](assets/startlight-logo.svg) | Brand lockup (+ powered by rcdrift.ro) |
+| [assets/startlight-logo-mark.svg](assets/startlight-logo-mark.svg) | Compact // mark + lamp dots |
+| [assets/startlight-logo.jpg](assets/startlight-logo.jpg) | Raster lockup for social / previews |
 | [schematic.svg](schematic.svg) | Wiring diagram embedded on the page |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Trunk-based workflow: feature branch → PR → `main` |
 | [DEPLOY.md](DEPLOY.md) | Flash Pico 2 W / Pico W and copy `.py` only |

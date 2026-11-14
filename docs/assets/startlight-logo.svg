@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 220" role="img" aria-labelledby="title desc">
+  <title id="title">StartLight.ro</title>
+  <desc id="desc">StartLight wordmark with powered by rcdrift.ro, RCDrift dark theme</desc>
+  <rect width="720" height="220" fill="#0a0910"/>
+  <!-- // slash mark -->
+  <g transform="translate(48 78) skewX(-14)">
+    <text x="6" y="0" fill="#f34ebc" font-family="Arial Black, Arial, Helvetica, sans-serif"
+          font-size="72" font-weight="900" font-style="italic" letter-spacing="-10">//</text>
+    <text x="0" y="0" fill="#48ccfa" font-family="Arial Black, Arial, Helvetica, sans-serif"
+          font-size="72" font-weight="900" font-style="italic" letter-spacing="-10">//</text>
+  </g>
+  <!-- Wordmark -->
+  <text x="150" y="78" font-family="Arial Black, Arial, Helvetica, sans-serif"
+        font-size="56" font-weight="900" font-style="italic" letter-spacing="-2">
+    <tspan fill="#f6f3fb">START</tspan><tspan fill="#f34ebc">LIGHT</tspan><tspan fill="#aea4bd" font-size="34" dy="-8">.ro</tspan>
+  </text>
+  <!-- Accent rule -->
+  <rect x="150" y="102" width="220" height="2" fill="#292432"/>
+  <rect x="150" y="102" width="56" height="2" fill="#f34ebc"/>
+  <!-- Powered by -->
+  <text x="150" y="138" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" letter-spacing="0.08em">
+    <tspan fill="#a29cab">POWERED BY </tspan><tspan fill="#48ccfa">rcdrift.ro</tspan>
+  </text>
+  <!-- Lamp dots: red / yellow / yellow / green -->
+  <g transform="translate(620 48)">
+    <circle cx="0" cy="0" r="10" fill="#e10600"/>
+    <circle cx="0" cy="28" r="10" fill="#f5c518"/>
+    <circle cx="0" cy="56" r="10" fill="#f5c518"/>
+    <circle cx="0" cy="84" r="10" fill="#00c853"/>
+  </g>
+</svg>
