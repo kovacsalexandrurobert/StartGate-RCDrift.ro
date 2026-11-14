@@ -483,9 +483,9 @@ def serve_control(show_saved=False):
         "setLamps([0,0,0,0]);cd.textContent='';"
         "st.textContent=I18N.t('status.done');await sleep(0.6)"
         "}}catch(e){st.textContent=I18N.t('status.error')+e}"
-        "setLamps([0,0,0,0]);cd.textContent='';"
+        "finally{setLamps([0,0,0,0]);cd.textContent='';"
         "st.setAttribute('data-i18n','status.ready');"
-        "st.textContent=I18N.t('status.ready');btn.disabled=false}"
+        "st.textContent=I18N.t('status.ready');btn.disabled=false}}"
         "</script>"
     )
     return _shell("title.remote", "control", body)

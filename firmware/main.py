@@ -316,26 +316,36 @@ def main():
                 print("[Start] Sequence triggered")
                 plan = get_start_plan()
                 clear_start_requested()
-                if plan:
-                    lights.run_start_sequence(
-                        start_delay=plan["delay"],
-                        red_dur=plan["red_duration"],
-                        rand_min=settings["random_wait_min"],
-                        rand_max=settings["random_wait_max"],
-                        yellow_interval=plan["yellow_interval"],
-                        green_off_delay=plan["green_off_delay"],
-                        rand_wait=plan["random_wait"],
-                    )
-                else:
-                    delay = get_start_delay_value()
-                    lights.run_start_sequence(
-                        start_delay=delay,
-                        red_dur=settings["red_duration"],
-                        rand_min=settings["random_wait_min"],
-                        rand_max=settings["random_wait_max"],
-                        yellow_interval=settings["yellow_interval"],
-                        green_off_delay=settings["green_off_delay"],
-                    )
+                try:
+                    if plan:
+                        lights.run_start_sequence(
+                            start_delay=plan["delay"],
+                            red_dur=plan["red_duration"],
+                            rand_min=settings["random_wait_min"],
+                            rand_max=settings["random_wait_max"],
+                            yellow_interval=plan["yellow_interval"],
+                            green_off_delay=plan["green_off_delay"],
+                            rand_wait=plan["random_wait"],
+                        )
+                    else:
+                        delay = get_start_delay_value()
+                        lights.run_start_sequence(
+                            start_delay=delay,
+                            red_dur=settings["red_duration"],
+                            rand_min=settings["random_wait_min"],
+                            rand_max=settings["random_wait_max"],
+                            yellow_interval=settings["yellow_interval"],
+                            green_off_delay=settings["green_off_delay"],
+                        )
+                except Exception as e:
+                    print("[Start] Sequence error:", e)
+                finally:
+                    # HTTP was blocked during the sequence; ensure lamps are dark
+                    # before accepting the next browser request.
+                    try:
+                        lights.all_off()
+                    except Exception:
+                        pass
 
             run_server(settings, lights)
             time.sleep_ms(50)
