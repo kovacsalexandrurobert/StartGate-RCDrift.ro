@@ -52,8 +52,35 @@ class LightController:
         self.set_light(light_idx, state)
 
     def all_off(self):
-        """Turn off all lights"""
-        self.set_all_lights(False)
+        """Turn off all lights (active-low: drive every pin HIGH)."""
+        for pin in self.pins:
+            try:
+                pin.value(1)
+            except Exception:
+                pass
+
+    def _sleep_s(self, seconds):
+        """Sleep in short slices so Pico W / Pico 2 W (CYW43 + USB) do not wedge.
+
+        A single long time.sleep() / sleep_ms() can freeze the board while WiFi
+        is up; 50 ms slices + machine.idle() keep the system alive. Cap 60 s.
+        """
+        try:
+            ms = int(float(seconds) * 1000.0)
+        except (TypeError, ValueError):
+            ms = 0
+        if ms < 0:
+            ms = 0
+        if ms > 60000:
+            ms = 60000
+        while ms > 0:
+            chunk = 50 if ms > 50 else ms
+            time.sleep_ms(chunk)
+            ms -= chunk
+            try:
+                machine.idle()
+            except Exception:
+                pass
 
     def run_self_test(self):
         """Boot self-test: cycle through all 4 lights in sequence"""
@@ -92,53 +119,60 @@ class LightController:
         start_delay: seconds to wait after button push
         rand_wait: if set, use this hold after red (so web UI can match); else random
         callback: optional func(phase, countdown_sec) for UI updates
+
+        always turns lamps off in finally (crash / interrupt safe).
         """
-        print("[Light] Start sequence: delay=%ds red=%.1fs rand=%.1f-%.1fs" % (start_delay, red_dur, rand_min, rand_max))
-        self.all_off()
+        print("[Light] Start sequence: delay=%ds red=%.1fs rand=%.1f-%.1fs" % (
+            int(start_delay), float(red_dur), float(rand_min), float(rand_max)))
+        try:
+            self.all_off()
 
-        # Phase 1: Countdown delay
-        print("[Light] Phase 1: Countdown %ds" % start_delay)
-        if callback:
-            callback("countdown", int(start_delay))
-        for sec in range(int(start_delay), 0, -1):
+            # Phase 1: Countdown delay
+            print("[Light] Phase 1: Countdown %ds" % int(start_delay))
             if callback:
-                callback("countdown", sec)
-            time.sleep(1)
-        if callback:
-            callback("countdown", 0)
+                callback("countdown", int(start_delay))
+            for sec in range(int(start_delay), 0, -1):
+                if callback:
+                    callback("countdown", sec)
+                time.sleep(1)
+            if callback:
+                callback("countdown", 0)
 
-        # Phase 2: Red light
-        print("[Light] Phase 2: Red light")
-        self.set_light(RED, True)
-        time.sleep(red_dur)
+            # Phase 2: Red light
+            print("[Light] Phase 2: Red light")
+            self.set_light(RED, True)
+            self._sleep_s(red_dur)
 
-        # Phase 3: Random wait (1-3 sec typical), or fixed value from /start plan
-        if rand_wait is None:
-            wait = random.uniform(rand_min, rand_max)
-        else:
-            wait = float(rand_wait)
-        print("[Light] Phase 3: Random wait %.1fs" % wait)
-        time.sleep(wait)
+            # Phase 3: Random wait (1-3 sec typical), or fixed value from /start plan
+            if rand_wait is None:
+                wait = random.uniform(float(rand_min), float(rand_max))
+            else:
+                wait = float(rand_wait)
+            print("[Light] Phase 3: Random wait %.2fs" % wait)
+            self._sleep_s(wait)
 
-        # Phase 4: Yellow 1
-        print("[Light] Phase 4: Yellow 1")
-        self.set_light(YELLOW1, True)
-        time.sleep(yellow_interval)
+            # Phase 4: Yellow 1
+            print("[Light] Phase 4: Yellow 1")
+            self.set_light(YELLOW1, True)
+            self._sleep_s(yellow_interval)
 
-        # Phase 5: Yellow 2
-        print("[Light] Phase 5: Yellow 2")
-        self.set_light(YELLOW2, True)
-        time.sleep(yellow_interval)
+            # Phase 5: Yellow 2
+            print("[Light] Phase 5: Yellow 2")
+            self.set_light(YELLOW2, True)
+            self._sleep_s(yellow_interval)
 
-        # Phase 6: Green - GO!
-        print("[Light] Phase 6: GREEN - GO!")
-        self.set_light(GREEN, True)
-        if callback:
-            callback("go", 0)
-        time.sleep(green_off_delay)
+            # Phase 6: Green - GO!
+            self.set_light(GREEN, True)
+            print("[Light] Phase 6: GREEN on, hold %.2fs" % float(green_off_delay))
+            if callback:
+                callback("go", 0)
+            self._sleep_s(green_off_delay)
 
-        # Phase 7: All off
-        print("[Light] Phase 7: All off - sequence complete")
-        self.all_off()
-        if callback:
-            callback("done", 0)
+            # Phase 7: All off
+            print("[Light] Phase 7: All off - sequence complete")
+            if callback:
+                callback("done", 0)
+        finally:
+            # Always dark — even if a sleep/USB/WiFi glitch aborted the sequence
+            self.all_off()
+            print("[Light] Pins forced OFF")
