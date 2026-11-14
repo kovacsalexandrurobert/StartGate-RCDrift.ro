@@ -4,12 +4,24 @@ Firmware for a **Raspberry Pi Pico W** (MicroPython 1.22+ with Bluetooth) that r
 
 Human setup lives in `README.md`. Wiring lives in `docs/SCHEMATIC.md`. This file is the behavior contract. Repo layout keeps docs off the device: only `firmware/*.py` is flashed.
 
+## Git workflow (trunk-based)
+
+`main` is protected. **Never commit or push directly to `main`.** Every change uses a short-lived branch and a PR (squash or rebase). See `docs/CONTRIBUTING.md`.
+
+```text
+git checkout main && git pull
+git checkout -b feature/<short-name>
+# …edit, commit…
+git push -u origin HEAD
+# open PR → merge → delete branch
+```
+
 ## Repo layout
 
 | Path | On the Pico? | Role |
 |------|--------------|------|
 | `firmware/` | Yes — copy `.py` only | Deployable MicroPython |
-| `docs/` | No | Schematic and doc index |
+| `docs/` | No | Schematic, deploy, contributing, examples |
 | `AGENTS.md`, `README.md`, `LICENSE` | No | Agents, humans, license |
 | `.cursor/rules/` | No | Cursor agent constraints |
 

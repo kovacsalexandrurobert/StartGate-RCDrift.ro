@@ -4,6 +4,7 @@ Human and agent docs live here. **Do not copy this folder to the Pico.** Flash o
 
 | File | Audience |
 |------|----------|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Trunk-based workflow: feature branch → PR → `main` |
 | [DEPLOY.md](DEPLOY.md) | What to copy to the Pico (`.py` only) |
 | [examples/](examples/) | Placeholder shapes for on-device JSON (no real passwords) |
 | [SCHEMATIC.md](SCHEMATIC.md) | Wiring, GPIO, SSR, optional OLED |
