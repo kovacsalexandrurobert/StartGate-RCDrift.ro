@@ -1,0 +1,32 @@
+---
+description: Pico W start-light constraints. Read AGENTS.md before changing behavior.
+alwaysApply: true
+---
+
+# Start Light firmware
+
+Read `AGENTS.md` before changing behavior. This is MicroPython on a Raspberry Pi Pico W. There is no pip, no asyncio, and no CPython-only stdlib.
+
+## Invariants
+
+- Lamps are active-low. `Pin.value(0)` is ON, `Pin.value(1)` is OFF. Boot and cleanup must leave every lamp OFF.
+
+```python
+# ON
+pin.value(0)
+# OFF
+pin.value(1)
+```
+
+- WiFi STA and BLE share one radio. Call `wlan.active(False)` before `bluetooth.BLE()`. Do not serve HTTP while BLE is advertising.
+- `main.py` owns boot: self-test, WiFi retries, BLE credential mode, optional IP-over-BLE, then the start loop. Do not add a second entry point.
+- One start implementation: `LightController.run_start_sequence`. Web `/start` and BLE `START` / `GO` / `RUN` must both call it.
+- Defaults live in `config.py`. The Pico overrides them in `startlight_config.json` through `settings.py`. Do not add another settings store.
+- `PREFERRED_NETWORK` and `GREEN_AFTER_LAST_YELLOW` are unused. Wire them up or leave them; do not assume they already affect the sequence.
+- Never commit `wifi_creds.json`, `wifi_networks.json`, or the other paths in `.gitignore`.
+
+## When extending
+
+- Keep the web UI as inline HTML in `webserver.py`. A settings POST must call `settings.save`.
+- Reflect status on the lamps (`lights.blink_status`), the onboard LED (`onboard_led`), and the OLED (`display.py`). A missing OLED must not abort boot.
+- `run_server` accepts one connection, then returns. The start sequence blocks that loop until the lamps finish.

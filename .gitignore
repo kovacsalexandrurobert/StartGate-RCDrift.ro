@@ -1,0 +1,13 @@
+# Device secrets and runtime state. Created on the Pico, never committed.
+wifi_creds.json
+wifi_networks.json
+last_wifi.json
+wifi_country.json
+ble_pending_ip.json
+startlight_config.json
+
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+Thumbs.db
