@@ -116,6 +116,8 @@ POST `/settings` WiFi: a non-empty SSID is written with `wifi_config.save_creden
 
 The remote page countdown is **client-side**. It waits `delay` seconds, shows `GO!` for 3 s, and re-enables the button. It does not follow red, random wait, or yellow. Those keep running on the Pico after `/start` has already returned.
 
+UI language is **client-side RO/EN** (`localStorage` key `sl_lang`, default `ro`). The language switcher in the header applies to Remote, Settings, and 404. Keep copy in `_i18n_js()` dictionaries; mark strings with `data-i18n` / `data-i18n-html` / `data-i18n-placeholder`.
+
 The settings page label “Random (5–20 sec)” is fixed text. The real range is `start_delay_random_min` / `start_delay_random_max`. LED test checkboxes are not synced back from the device; a sequence can turn lamps off while the boxes stay checked.
 
 `/api/settings` returns the settings dict only. Do not add passwords to that payload.
