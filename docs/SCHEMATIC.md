@@ -126,7 +126,7 @@ I2C OLED (e.g. SSD1306 128×64) shows status during boot and runtime:
 | SDA         | Pico GP6 (pin 9) – I2C1 SDA |
 | SCL         | Pico GP7 (pin 10) – I2C1 SCL |
 
-**Display type:** SSD1306 128×64 I2C OLED (0x3C or 0x3D address)
+**Display type:** SSD1306 128×64 I2C OLED (0x3C or 0x3D address). Firmware uses SoftI2C on GP6/GP7 (not hardware I2C1) because RP2 hard I2C often times out with these modules.
 
 ---
 

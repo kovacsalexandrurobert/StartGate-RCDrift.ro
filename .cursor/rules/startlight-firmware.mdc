@@ -32,6 +32,6 @@ pin.value(1)
 ## When extending
 
 - Keep the web UI as inline HTML in `firmware/webserver.py`. A settings POST must call `settings.save`.
-- Reflect status on the lamps (`lights.blink_status`), the onboard LED (`onboard_led`), and the OLED (`display.py`). A missing OLED must not abort boot.
+- Reflect status on the lamps (`lights.blink_status`), the onboard LED (`onboard_led`), and the OLED (`display.py`). OLED uses SoftI2C on GP6/GP7 (probe 0x3C then 0x3D); hard I2C ETIMEDOUT/EIO is a known RP2 issue. A missing OLED must not abort boot.
 - `run_server` accepts one connection, then returns. The start sequence blocks that loop until the lamps finish.
 - Put new documentation under `docs/`. Put new device code under `firmware/` as `.py` only.

@@ -166,7 +166,7 @@ Onboard LED during the BLE wait: on 2 s, off 1 s (`status_ble_tick`). During WiF
 
 ## OLED
 
-`display.py` uses I2C bus 1, SDA GP6, SCL GP7, 400 kHz, SSD1306 128×64 at address **0x3C only**. `SCHEMATIC.md` also mentions 0x3D; the code never probes it. `DISPLAY_ENABLED = False` or a missing panel makes every `show_*` call a no-op. Text is 4 lines × 21 characters. After WLAN is turned off for BLE, `reset_oled_cache` drops the cached I2C object before the PIN screen is drawn.
+`display.py` drives SSD1306 128×64 on **SoftI2C** (not hardware `I2C(1)`), SDA GP6, SCL GP7. SoftI2C first at 100 kHz, then 400 kHz; it `scan()`s and prefers **0x3C**, then **0x3D**. RP2 hard I2C commonly raises `ETIMEDOUT` / `EIO` with these modules even when wiring is correct. `DISPLAY_ENABLED = False` makes every `show_*` a no-op. Text is 4 lines × 21 characters. After WiFi connect / ready / WLAN-off-for-BLE, `reset_oled_cache` drops the cached instance so the next draw re-opens the bus.
 
 ## Persistence
 

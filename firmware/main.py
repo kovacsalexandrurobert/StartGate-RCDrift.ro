@@ -73,6 +73,7 @@ from display import (
     show_wifi_connected,
     show_wifi_failed,
     show_ip,
+    reset_oled_cache,
 )
 
 # WiFi config
@@ -124,6 +125,8 @@ def connect_wifi(tick_callback=None):
             if status == network.STAT_GOT_IP:
                 print("[WiFi] Connected to '%s'!" % ssid[:20])
                 record_successful_connection(ssid)
+                # CYW43 activity can leave hard/soft I2C stale — re-open OLED
+                reset_oled_cache()
                 show_wifi_connected(ssid[:20] if ssid else "")
                 return True
             if status == network.STAT_CONNECT_FAIL or status == network.STAT_NO_AP_FOUND:
@@ -306,6 +309,7 @@ def main():
 
     print("[Boot] ========== Ready ==========")
     print("[OK] Start Light ready at http://" + ip)
+    reset_oled_cache()
     show_ip(ip)
     lights.all_off()
     led_off()  # Ensure onboard LED off when running
