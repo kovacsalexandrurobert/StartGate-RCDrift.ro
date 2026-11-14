@@ -1,6 +1,6 @@
 # Start Light - Wireless Race Start System
 
-Wireless remote-controlled start light system for F1/drift racing, built for **Raspberry Pi Pico W** with MicroPython.
+Wireless remote-controlled start light system for F1/drift racing, built for **Raspberry Pi Pico 2 W** (also runs on Pico W) with MicroPython.
 
 Agents changing this firmware should follow **AGENTS.md** (behavior contract) before editing.
 
@@ -28,7 +28,7 @@ The Pico has very little flash. Never copy `docs/`, markdown, or SVG onto the de
 
 ## Hardware
 
-- Raspberry Pi Pico W
+- **Raspberry Pi Pico 2 W** (preferred) or Pico W — same GP2–GP7 wiring
 - 4–16 Solid State Relays (logic-level, 3.3V compatible)
 - LED strips/lights (5–12V, powered via SSR)
 - 220Ω resistors (one per GPIO)
@@ -38,14 +38,18 @@ Wiring: **[docs/SCHEMATIC.md](docs/SCHEMATIC.md)** · interactive schematic page
 
 ## Firmware
 
-Use **MicroPython 1.22+** with **Bluetooth support** for Pico W:
+Flash the UF2 that matches the board (not interchangeable):
 
-1. Download: https://micropython.org/download/RPI_PICO_W/
-2. Flash with `mpremote` or Thonny
+| Board | MicroPython | Link |
+|-------|-------------|------|
+| Pico 2 W | **RPI_PICO2_W** 1.26+ (BLE) | https://micropython.org/download/RPI_PICO2_W/ |
+| Pico W | **RPI_PICO_W** 1.22+ (BLE) | https://micropython.org/download/RPI_PICO_W/ |
+
+Then copy the same `firmware/*.py` files with `mpremote` or Thonny. Full steps: [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Installation
 
-1. Flash MicroPython (with BLE) to Pico W
+1. Flash MicroPython for **your** board (Pico 2 W → `RPI_PICO2_W`)
 2. Copy **only** the `.py` files from `firmware/` to the Pico root (not `docs/`, not this README):
 
    ```text
@@ -53,7 +57,7 @@ Use **MicroPython 1.22+** with **Bluetooth support** for Pico W:
    ```
 
 3. Optionally edit `firmware/config.py` before copy – set `WIFI_SSID` and `WIFI_PASSWORD` (or leave blank and use BLE on first boot)
-4. Power on – self-test runs, then WiFi connects
+4. Power on – log shows `[Board] Pico 2 W` (or Pico W), self-test runs, then WiFi connects
 
 ## First-Time Setup (No WiFi Credentials)
 
@@ -103,7 +107,7 @@ When the Pico is in **BLE mode** (WiFi failed or no credentials), you can trigge
 3. Send the text **`START`**, **`GO`**, or **`RUN`** (or JSON `{"cmd":"start"}`).
 4. The same timing as **Settings** (red delay, random gap, yellows, green) is used.
 
-**Note:** On Pico W, **WiFi and BLE cannot run at the same time** (one radio). While WiFi is connected and the web server is running, use **http://&lt;IP&gt;/** for START. Use BLE **START** only when the device is in BLE mode (no WiFi).
+**Note:** On Pico 2 W and Pico W, **WiFi and BLE cannot run at the same time** (one CYW43 radio). While WiFi is connected and the web server is running, use **http://&lt;IP&gt;/** for START. Use BLE **START** only when the device is in BLE mode (no WiFi).
 
 ### How to Send WiFi SSID and Password via BLE
 
@@ -215,6 +219,7 @@ README.md                 - Human setup (not on Pico)
 docs/                     - Schematic + doc index (not on Pico)
 firmware/                 - Copy only these .py files to the Pico
   main.py                 - Entry point
+  board.py                - Pico 2 W / Pico W detection
   boot.py                 - Startup (minimal)
   config.py               - Default settings, GPIO map
   settings.py             - Light settings (startlight_config.json)

@@ -1,8 +1,8 @@
 # Agent guide — Start Light (RC drift)
 
-Firmware for a **Raspberry Pi Pico W** (MicroPython 1.22+ with Bluetooth) that runs a drift/F1-style start lamp tree. Four GPIO outputs drive solid-state relays. Operators start a run from a phone browser on WiFi, or from BLE when WiFi is down.
+Firmware for a **Raspberry Pi Pico 2 W** (preferred; MicroPython **RPI_PICO2_W** 1.26+) that runs a drift/F1-style start lamp tree. The same `.py` modules also run on the original **Pico W** (**RPI_PICO_W** 1.22+). Four GPIO outputs drive solid-state relays. Operators start a run from a phone browser on WiFi, or from BLE when WiFi is down.
 
-Human setup lives in `README.md`. Wiring lives in `docs/SCHEMATIC.md`. This file is the behavior contract. Repo layout keeps docs off the device: only `firmware/*.py` is flashed.
+UF2 images are **not** interchangeable between Pico W and Pico 2 W. Application code is. Human setup lives in `README.md`. Wiring lives in `docs/SCHEMATIC.md`. This file is the behavior contract. Repo layout keeps docs off the device: only `firmware/*.py` is flashed.
 
 ## Git workflow (trunk-based)
 
@@ -20,7 +20,7 @@ git push -u origin HEAD
 
 | Path | On the Pico? | Role |
 |------|--------------|------|
-| `firmware/` | Yes — copy `.py` only | Deployable MicroPython |
+| `firmware/` | Yes — copy `.py` only | Deployable MicroPython (Pico 2 W / Pico W) |
 | `docs/` | No | Schematic, deploy, contributing, examples |
 | `AGENTS.md`, `README.md`, `LICENSE` | No | Agents, humans, license |
 | `.cursor/rules/` | No | Cursor agent constraints |
@@ -40,6 +40,7 @@ Runtime is MicroPython: `%` formatting, `machine` / `network` / `bluetooth`, no 
 | File | Role |
 |------|------|
 | `firmware/main.py` | Boot, WiFi retry loop, BLE fallback, IP handoff, start loop |
+| `firmware/board.py` | Pico 2 W / Pico W detection for boot logs |
 | `firmware/boot.py` | Empty. MicroPython runs it before `main.py` |
 | `firmware/config.py` | Compile-time defaults: GPIO, timing, display, BLE PIN, country, scan flag |
 | `firmware/settings.py` | Load/save `startlight_config.json`, merge onto defaults, compute start delay |
@@ -50,7 +51,7 @@ Runtime is MicroPython: `%` formatting, `machine` / `network` / `bluetooth`, no 
 | `firmware/ble_advertising.py` | Advertising payload helper (MicroPython sample). Leave it alone |
 | `firmware/display.py` | Optional SSD1306 status screens. Failures are swallowed |
 | `firmware/ssd1306.py` | Vendored I2C driver from micropython-ssd1306. Do not restyle |
-| `firmware/onboard_led.py` | Pico W `Pin("LED")` patterns. No-op if the LED pin is missing |
+| `firmware/onboard_led.py` | `Pin("LED")` via CYW43. No-op if the LED pin is missing |
 
 `docs/schematic.svg` matches `docs/SCHEMATIC.md`.
 
@@ -204,7 +205,8 @@ All of these are gitignored. Sanitized templates (placeholders only) live in `do
 
 ## Out of scope unless the hardware changes
 
-- Running WiFi and BLE together.
+- Running WiFi and BLE together (one CYW43 on Pico W and Pico 2 W).
+- Flashing the wrong MicroPython UF2 for the physical board.
 - Driving more than the four color channels. Extra lamp trees are wired in parallel on the same SSR, not extra GPIOs.
 - Authenticating the HTTP server. Anyone on the LAN can start a run and can rewrite WiFi credentials.
 - Treating the BLE PIN as a secret. The connect notification repeats it.
