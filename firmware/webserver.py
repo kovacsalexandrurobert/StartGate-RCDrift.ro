@@ -126,11 +126,16 @@ def _css():
 
 
 def _shell(title, nav, body):
-    """Page chrome matching RCDrift.ro topline + // brand."""
+    """Page chrome matching RCDrift.ro topline + // brand.
+
+    Keep page copy ASCII-only so it stays readable even if a client
+    ignores charset (Pico responses historically omitted it).
+    """
     c_on = ' class="on"' if nav == "control" else ""
     s_on = ' class="on"' if nav == "settings" else ""
     return (
         "<!DOCTYPE html><html lang=\"en\"><head>"
+        "<meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
         "<meta name=\"theme-color\" content=\"#0a0910\">"
         "<title>" + title + "</title><style>" + _css() + "</style></head><body>"
@@ -155,7 +160,7 @@ def serve_settings(settings):
     mode0 = "selected" if settings["start_delay_mode"] == 0 else ""
     mode1 = "selected" if settings["start_delay_mode"] == 1 else ""
     body = (
-        "<h1>SETĂRI.<br><em>TIMING.</em></h1>"
+        "<h1>SETTINGS.<br><em>TIMING.</em></h1>"
         "<p class=\"lead\">WiFi, lamp delays, and per-channel LED test. "
         "Same sequence the START button runs.</p>"
         "<form method=\"POST\" action=\"/settings\">"
@@ -189,7 +194,7 @@ def serve_settings(settings):
         "<div class=\"panel\"><h2>Start delay</h2>"
         "<label>Mode</label>"
         "<select name=\"start_delay_mode\">"
-        "<option value=\"0\" " + mode0 + ">Random (5–20 sec)</option>"
+        "<option value=\"0\" " + mode0 + ">Random (5-20 sec)</option>"
         "<option value=\"1\" " + mode1 + ">Fixed</option>"
         "</select>"
         "<label>Fixed delay (sec)</label>"
@@ -229,7 +234,7 @@ def serve_settings(settings):
         "m.textContent='All off';setTimeout(function(){m.textContent='';},1500)}"
         "</script>"
     )
-    return _shell("Start Light — Settings", "settings", body)
+    return _shell("Start Light - Settings", "settings", body)
 
 
 def serve_control(show_saved=False):
@@ -240,8 +245,8 @@ def serve_control(show_saved=False):
         "if(m)m.style.display='none'},4000)</script>"
     ) if show_saved else ""
     body = (
-        "<h1>PE LINIE.<br>DE-A<br><em>LATUL.</em></h1>"
-        "<p class=\"lead\">Arm the tree, wait the delay, then red → yellow → green. "
+        "<h1>START.<br>THE<br><em>TREE.</em></h1>"
+        "<p class=\"lead\">Press START, wait the delay, then red -&gt; yellow -&gt; green. "
         "Same timing as Settings.</p>"
         + flash
         + "<div id=\"countdown\" aria-live=\"polite\"></div>"
@@ -253,9 +258,9 @@ def serve_control(show_saved=False):
         "var btn=document.getElementById('startBtn');"
         "var cd=document.getElementById('countdown');"
         "var st=document.getElementById('status');"
-        "btn.disabled=true;st.textContent='Starting…';"
+        "btn.disabled=true;st.textContent='Starting...';"
         "try{var r=await fetch('/start');var j=await r.json();"
-        "if(j.ok){st.textContent='Countdown · '+j.delay+' sec';"
+        "if(j.ok){st.textContent='Countdown - '+j.delay+' sec';"
         "for(var i=j.delay;i>=0;i--){cd.textContent=i;"
         "await new Promise(function(x){setTimeout(x,1000)})}"
         "cd.textContent='GO!';st.textContent='Race started';"
@@ -264,7 +269,7 @@ def serve_control(show_saved=False):
         "cd.textContent='';st.textContent='Ready';btn.disabled=false}"
         "</script>"
     )
-    return _shell("Start Light — Remote", "control", body)
+    return _shell("Start Light - Remote", "control", body)
 
 
 def _unquote(s):
@@ -410,7 +415,7 @@ def handle_request(conn, settings, light_controller):
                 response = json.dumps({"ok": False, "error": str(e)})
         else:
             response = _shell(
-                "Start Light — 404",
+                "Start Light - 404",
                 "control",
                 "<h1>404.<br><em>MISS.</em></h1>"
                 "<p class=\"lead\">No page here. Back to remote or settings.</p>"
@@ -419,8 +424,19 @@ def handle_request(conn, settings, light_controller):
                 "<a class=\"btn ghost\" href=\"/settings\">Settings</a>",
             )
 
-        conn.send(b"HTTP/1.1 200 OK\r\nContent-Type: " + content_type.encode() + b"\r\nConnection: close\r\n\r\n")
-        conn.send(response.encode() if isinstance(response, str) else response)
+        if content_type == "text/html":
+            content_type = "text/html; charset=utf-8"
+        elif content_type == "application/json":
+            content_type = "application/json; charset=utf-8"
+        conn.send(
+            b"HTTP/1.1 200 OK\r\nContent-Type: "
+            + content_type.encode()
+            + b"\r\nConnection: close\r\n\r\n"
+        )
+        if isinstance(response, str):
+            conn.send(response.encode("utf-8"))
+        else:
+            conn.send(response)
     except Exception as e:
         try:
             conn.send(b"HTTP/1.1 500 OK\r\n\r\nError: " + str(e).encode())
