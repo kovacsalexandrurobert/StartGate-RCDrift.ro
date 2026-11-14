@@ -1,4 +1,10 @@
-# Start Light - Wireless Race Start System
+# StartLight.ro
+
+<p align="center">
+  <img src="docs/assets/startlight-logo.svg" alt="StartLight.ro — powered by rcdrift.ro" width="520">
+</p>
+
+<p align="center"><strong>Powered by <a href="https://www.rcdrift.ro">rcdrift.ro</a></strong></p>
 
 Wireless remote-controlled start light system for F1/drift racing, built for **Raspberry Pi Pico 2 W** (also runs on Pico W) with MicroPython.
 

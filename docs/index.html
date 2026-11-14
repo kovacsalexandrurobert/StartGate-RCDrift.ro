@@ -10,16 +10,18 @@
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --asphalt: #0c0e12;
-      --asphalt-2: #151922;
-      --lane: #1e2430;
-      --fog: #9aa3b5;
-      --paper: #f3f1ea;
+      --asphalt: #0a0910;
+      --asphalt-2: #13111d;
+      --lane: #181522;
+      --fog: #a29cab;
+      --paper: #f6f3fb;
       --ink: #12151c;
       --red: #e10600;
       --yellow: #f5c518;
       --green: #00c853;
-      --accent: #ff6b1a;
+      --pink: #f34ebc;
+      --blue: #48ccfa;
+      --accent: #f34ebc;
     }
 
     * { box-sizing: border-box; }
@@ -69,21 +71,33 @@
       margin-bottom: 1.5rem;
     }
 
-    .brand {
-      font-family: Teko, sans-serif;
-      font-weight: 700;
-      font-size: clamp(3.2rem, 10vw, 5.5rem);
-      line-height: 0.9;
-      letter-spacing: 0.02em;
-      color: #fff;
-      margin: 0;
-      text-transform: uppercase;
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      border: 0;
     }
 
-    .brand span {
+    .logo {
       display: block;
-      color: var(--red);
+      width: min(420px, 100%);
+      height: auto;
+      margin: 0;
     }
+
+    .powered {
+      margin: 0.65rem 0 0;
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--fog);
+    }
+    .powered a { color: var(--blue); text-decoration: none; }
 
     .hero-copy {
       max-width: 28rem;
@@ -300,7 +314,11 @@
     @media (max-width: 700px) {
       .cta.secondary { margin-left: 0; margin-top: 0.5rem; display: inline-flex; }
       .schematic-plane { padding: 1rem 0.5rem 1.25rem; }
+      .cta { background: var(--pink); }
+      .cta:hover { background: #d63fa8; }
     }
+    .cta { background: var(--pink); }
+    .cta:hover { background: #d63fa8; }
   </style>
 </head>
 <body>
@@ -309,13 +327,9 @@
   <header class="hero wrap">
     <div class="hero-top">
       <div>
-        <div class="lamps" aria-hidden="true">
-          <span class="lamp red"></span>
-          <span class="lamp y1"></span>
-          <span class="lamp y2"></span>
-          <span class="lamp green"></span>
-        </div>
-        <h1 class="brand">Start <span>Light</span></h1>
+        <h1 class="visually-hidden">StartLight.ro</h1>
+        <img class="logo" src="assets/startlight-logo.svg" width="720" height="220" alt="StartLight.ro — powered by rcdrift.ro">
+        <p class="powered">Powered by <a href="https://www.rcdrift.ro" target="_blank" rel="noopener">rcdrift.ro</a></p>
       </div>
       <div class="hero-copy">
         <h2>Wiring schematic</h2>
