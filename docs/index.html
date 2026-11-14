@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Start Light — Wiring Schematic</title>
+  <meta name="description" content="Wiring schematic for the Start Light RC drift start tree on Raspberry Pi Pico W.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=Teko:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --asphalt: #0c0e12;
+      --asphalt-2: #151922;
+      --lane: #1e2430;
+      --fog: #9aa3b5;
+      --paper: #f3f1ea;
+      --ink: #12151c;
+      --red: #e10600;
+      --yellow: #f5c518;
+      --green: #00c853;
+      --accent: #ff6b1a;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: Outfit, sans-serif;
+      color: var(--fog);
+      background:
+        radial-gradient(1200px 600px at 80% -10%, rgba(225, 6, 0, 0.18), transparent 55%),
+        radial-gradient(900px 500px at 10% 20%, rgba(245, 197, 24, 0.08), transparent 50%),
+        linear-gradient(165deg, var(--asphalt) 0%, var(--asphalt-2) 45%, #0a0c10 100%);
+      min-height: 100vh;
+    }
+
+    .noise {
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+      opacity: 0.04;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      z-index: 0;
+    }
+
+    .wrap {
+      position: relative;
+      z-index: 1;
+      width: min(1120px, calc(100% - 2rem));
+      margin: 0 auto;
+    }
+
+    /* Hero: one composition — brand, line, CTA, schematic plane */
+    .hero {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      padding: 1.25rem 0 2rem;
+      animation: rise 0.8s ease-out both;
+    }
+
+    .hero-top {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 1.25rem 2rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .brand {
+      font-family: Teko, sans-serif;
+      font-weight: 700;
+      font-size: clamp(3.2rem, 10vw, 5.5rem);
+      line-height: 0.9;
+      letter-spacing: 0.02em;
+      color: #fff;
+      margin: 0;
+      text-transform: uppercase;
+    }
+
+    .brand span {
+      display: block;
+      color: var(--red);
+    }
+
+    .hero-copy {
+      max-width: 28rem;
+    }
+
+    .hero-copy h2 {
+      font-family: Teko, sans-serif;
+      font-weight: 600;
+      font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+      color: #fff;
+      margin: 0 0 0.4rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .hero-copy p {
+      margin: 0 0 1rem;
+      font-size: 1.05rem;
+      line-height: 1.45;
+      color: var(--fog);
+    }
+
+    .cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.7rem 1.15rem;
+      background: var(--red);
+      color: #fff;
+      text-decoration: none;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      border: none;
+      transition: transform 0.2s ease, background 0.2s ease;
+    }
+
+    .cta:hover {
+      background: #c40500;
+      transform: translateY(-2px);
+    }
+
+    .cta.secondary {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.28);
+      margin-left: 0.6rem;
+    }
+
+    .cta.secondary:hover {
+      background: rgba(255,255,255,0.06);
+    }
+
+    .lamps {
+      display: flex;
+      gap: 0.45rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .lamp {
+      width: 0.7rem;
+      height: 0.7rem;
+      border-radius: 50%;
+      opacity: 0.35;
+      box-shadow: 0 0 0 0 transparent;
+    }
+
+    .lamp.red { background: var(--red); animation: pulse 3.6s ease-in-out infinite; }
+    .lamp.y1 { background: var(--yellow); animation: pulse 3.6s ease-in-out 0.9s infinite; }
+    .lamp.y2 { background: var(--yellow); animation: pulse 3.6s ease-in-out 1.4s infinite; }
+    .lamp.green { background: var(--green); animation: pulse 3.6s ease-in-out 1.9s infinite; }
+
+    .schematic-plane {
+      position: relative;
+      margin: 0 calc(50% - 50vw);
+      width: 100vw;
+      background:
+        linear-gradient(180deg, rgba(243,241,234,0.97), #ebe7dc);
+      border-block: 1px solid rgba(255,255,255,0.08);
+      min-height: 55vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem 1rem 2rem;
+      animation: fade-in 1s ease 0.2s both;
+    }
+
+    .schematic-plane::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        repeating-linear-gradient(
+          90deg,
+          transparent 0,
+          transparent 47px,
+          rgba(18, 21, 28, 0.04) 48px
+        );
+      pointer-events: none;
+    }
+
+    .schematic-plane object,
+    .schematic-plane img {
+      position: relative;
+      width: min(920px, 100%);
+      height: auto;
+      display: block;
+      filter: drop-shadow(0 18px 40px rgba(12, 14, 18, 0.25));
+    }
+
+    section {
+      padding: 3.5rem 0 1rem;
+    }
+
+    section h3 {
+      font-family: Teko, sans-serif;
+      font-size: 2rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: #fff;
+      margin: 0 0 0.35rem;
+    }
+
+    section .lead {
+      margin: 0 0 1.5rem;
+      max-width: 36rem;
+      line-height: 1.5;
+    }
+
+    .table-scroll {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.95rem;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 0.85rem 0.9rem;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+
+    th {
+      color: #fff;
+      font-weight: 600;
+      font-size: 0.8rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: rgba(255,255,255,0.03);
+    }
+
+    tr:hover td {
+      background: rgba(255,255,255,0.03);
+    }
+
+    .swatch {
+      display: inline-block;
+      width: 0.65rem;
+      height: 0.65rem;
+      border-radius: 50%;
+      margin-right: 0.45rem;
+      vertical-align: middle;
+    }
+
+    .notes {
+      display: grid;
+      gap: 0.75rem;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .notes li {
+      padding: 0.85rem 0;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      line-height: 1.45;
+    }
+
+    .notes strong {
+      color: #fff;
+      font-weight: 600;
+    }
+
+    footer {
+      padding: 3rem 0 2.5rem;
+      color: rgba(154, 163, 181, 0.75);
+      font-size: 0.9rem;
+    }
+
+    footer a {
+      color: #fff;
+      text-decoration: none;
+      border-bottom: 1px solid rgba(255,255,255,0.3);
+    }
+
+    @keyframes pulse {
+      0%, 70%, 100% { opacity: 0.3; box-shadow: 0 0 0 0 transparent; }
+      15%, 35% { opacity: 1; box-shadow: 0 0 12px currentColor; }
+    }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @media (max-width: 700px) {
+      .cta.secondary { margin-left: 0; margin-top: 0.5rem; display: inline-flex; }
+      .schematic-plane { padding: 1rem 0.5rem 1.25rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="noise" aria-hidden="true"></div>
+
+  <header class="hero wrap">
+    <div class="hero-top">
+      <div>
+        <div class="lamps" aria-hidden="true">
+          <span class="lamp red"></span>
+          <span class="lamp y1"></span>
+          <span class="lamp y2"></span>
+          <span class="lamp green"></span>
+        </div>
+        <h1 class="brand">Start <span>Light</span></h1>
+      </div>
+      <div class="hero-copy">
+        <h2>Wiring schematic</h2>
+        <p>Pico W → 220Ω → SSR → race lamps. Four channels, active-low, optional OLED on I2C.</p>
+        <a class="cta" href="https://github.com/kovacsalexandrurobert/StartGate-RCDrift.ro">View firmware on GitHub</a>
+        <a class="cta secondary" href="#pins">Pin map</a>
+      </div>
+    </div>
+
+    <div class="schematic-plane" id="schematic">
+      <img src="schematic.svg" width="700" height="640" alt="Start Light wiring schematic: Pico W GPIO to SSRs, LED power, and OLED display">
+    </div>
+  </header>
+
+  <main>
+    <section class="wrap" id="pins">
+      <h3>GPIO map</h3>
+      <p class="lead">One SSR per color. Wire extra lamp trees in parallel on the same SSR output. Active-low: GPIO low turns the light on.</p>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Color</th>
+              <th>GPIO</th>
+              <th>Pico pin</th>
+              <th>SSR</th>
+              <th>Connects to</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="swatch" style="background:var(--red)"></span>Red</td>
+              <td>GP2</td>
+              <td>4</td>
+              <td>SSR1</td>
+              <td>All red lamps (parallel)</td>
+            </tr>
+            <tr>
+              <td><span class="swatch" style="background:var(--yellow)"></span>Yellow 1</td>
+              <td>GP3</td>
+              <td>5</td>
+              <td>SSR2</td>
+              <td>All first yellow lamps</td>
+            </tr>
+            <tr>
+              <td><span class="swatch" style="background:var(--yellow)"></span>Yellow 2</td>
+              <td>GP4</td>
+              <td>6</td>
+              <td>SSR3</td>
+              <td>All second yellow lamps</td>
+            </tr>
+            <tr>
+              <td><span class="swatch" style="background:var(--green)"></span>Green</td>
+              <td>GP5</td>
+              <td>7</td>
+              <td>SSR4</td>
+              <td>All green lamps</td>
+            </tr>
+            <tr>
+              <td>OLED SDA</td>
+              <td>GP6</td>
+              <td>9</td>
+              <td>—</td>
+              <td>SSD1306 SDA (optional)</td>
+            </tr>
+            <tr>
+              <td>OLED SCL</td>
+              <td>GP7</td>
+              <td>10</td>
+              <td>—</td>
+              <td>SSD1306 SCL (optional)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="wrap" id="power">
+      <h3>Power &amp; notes</h3>
+      <p class="lead">Keep Pico, 5V supply, and LED supply grounds common. Lamp rails are 5–12 V through the SSRs; control side is 3.3 V from the Pico.</p>
+      <ul class="notes">
+        <li><strong>Pico power:</strong> 5 V on VBUS (pin 40), GND on pin 38 — USB or a 5 V adapter.</li>
+        <li><strong>SSR input:</strong> Logic-level, 3.3 V compatible, ~10 mA through a 220–330 Ω resistor per channel.</li>
+        <li><strong>OLED:</strong> SSD1306 128×64 I2C at 0x3C on GP6/GP7; VCC from Pico 3V3. Firmware does not probe 0x3D.</li>
+        <li><strong>Build tip:</strong> Test one color before paralleling multiple lamp sets on an SSR.</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="wrap">
+    <p>
+      Full wiring prose:
+      <a href="https://github.com/kovacsalexandrurobert/StartGate-RCDrift.ro/blob/main/docs/SCHEMATIC.md">SCHEMATIC.md</a>
+      · Firmware deploy:
+      <a href="https://github.com/kovacsalexandrurobert/StartGate-RCDrift.ro/blob/main/docs/DEPLOY.md">DEPLOY.md</a>
+      · Source:
+      <a href="https://github.com/kovacsalexandrurobert/StartGate-RCDrift.ro">StartGate-RCDrift.ro</a>
+    </p>
+  </footer>
+</body>
+</html>

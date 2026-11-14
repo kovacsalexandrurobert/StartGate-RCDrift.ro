@@ -34,7 +34,7 @@ The Pico has very little flash. Never copy `docs/`, markdown, or SVG onto the de
 - 220Ω resistors (one per GPIO)
 - Optional: SSD1306 128×64 I2C OLED (GP6 SDA, GP7 SCL) – see schematic
 
-See **[docs/SCHEMATIC.md](docs/SCHEMATIC.md)** for wiring.
+Wiring: **[docs/SCHEMATIC.md](docs/SCHEMATIC.md)** · interactive schematic page: **https://kovacsalexandrurobert.github.io/StartGate-RCDrift.ro/**
 
 ## Firmware
 
