@@ -53,6 +53,8 @@ Flash the UF2 that matches the board (not interchangeable):
 
 Then copy the same `firmware/*.py` files with `mpremote` or Thonny. Full steps: [docs/DEPLOY.md](docs/DEPLOY.md).
 
+Optional **rcdrift.ro** binding (pairing code from the event hub) is documented in [docs/STARTLIGHT_CLOUD.md](docs/STARTLIGHT_CLOUD.md). Unpaired devices stay full standalone local Start Lights.
+
 ## Installation
 
 1. Flash MicroPython for **your** board (Pico 2 W → `RPI_PICO2_W`)

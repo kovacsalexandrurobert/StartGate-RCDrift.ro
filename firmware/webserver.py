@@ -309,6 +309,40 @@ def _shell(title_key, nav, body):
     )
 
 
+def _cloud_panel():
+    """Optional rcdrift.ro pairing — standalone works without this."""
+    try:
+        from cloud import load, status_line, DEFAULT_API_BASE
+        cfg = load()
+        status = status_line()
+        base = html_escape(cfg.get("api_base") or DEFAULT_API_BASE)
+        event = html_escape(cfg.get("event_id") or "-")
+    except Exception:
+        status, base, event = "Local", "https://staging.rcdrift.ro", "-"
+    return (
+        "<div class=\"panel\" style=\"margin-top:16px\"><h2>rcdrift.ro</h2>"
+        "<p class=\"hint\">Optional. Fara legare = Start Light local (standalone).</p>"
+        "<p class=\"hint\">Status: <strong>" + html_escape(status) + "</strong> · event: "
+        + event + "</p>"
+        "<form method=\"POST\" action=\"/settings\">"
+        "<input type=\"hidden\" name=\"cloud_action\" value=\"save_base\">"
+        "<label>API base</label>"
+        "<input type=\"text\" name=\"cloud_api_base\" value=\"" + base + "\">"
+        "<button class=\"btn ghost\" type=\"submit\" style=\"margin-top:10px\">Salveaza URL</button>"
+        "</form>"
+        "<form method=\"POST\" action=\"/settings\" style=\"margin-top:12px\">"
+        "<input type=\"hidden\" name=\"cloud_action\" value=\"pair\">"
+        "<label>Cod impartire (de pe site)</label>"
+        "<input type=\"text\" name=\"pair_code\" maxlength=\"16\" placeholder=\"ABC123\">"
+        "<button class=\"btn\" type=\"submit\" style=\"margin-top:10px\">Imperecheaza</button>"
+        "</form>"
+        "<form method=\"POST\" action=\"/settings\" style=\"margin-top:12px\">"
+        "<input type=\"hidden\" name=\"cloud_action\" value=\"unpair\">"
+        "<button class=\"btn ghost\" type=\"submit\">Anuleaza legatura (standalone)</button>"
+        "</form></div>"
+    )
+
+
 def serve_settings(settings):
     """Generate settings page HTML"""
     mode0 = "selected" if settings["start_delay_mode"] == 0 else ""
@@ -362,7 +396,8 @@ def serve_settings(settings):
         "</div>"
         "<button class=\"btn\" type=\"submit\" data-i18n=\"btn.save\">Salveaza setari</button>"
         "</form>"
-        "<div class=\"panel\" style=\"margin-top:16px\"><h2 data-i18n=\"p.led\">Test LED</h2>"
+        + _cloud_panel()
+        + "<div class=\"panel\" style=\"margin-top:16px\"><h2 data-i18n=\"p.led\">Test LED</h2>"
         "<p class=\"hint\" data-i18n=\"led.hint\">Bifat = APRINS.</p>"
         "<label class=\"check\"><input type=\"checkbox\" id=\"ledTest0\" "
         "onchange=\"ledTest(0,this.checked)\"> <span data-i18n=\"led.0\">Rosu (GP2)</span></label>"
@@ -579,6 +614,24 @@ def handle_request(conn, settings, light_controller):
                 form = parse_form(body)
                 if form:
                     try:
+                        cloud_action = (form.get("cloud_action") or "").strip()
+                        if cloud_action:
+                            from cloud import load as cloud_load, save as cloud_save, pair, unpair, DEFAULT_API_BASE
+                            if cloud_action == "save_base":
+                                cfg = cloud_load()
+                                base = (form.get("cloud_api_base") or DEFAULT_API_BASE).strip().rstrip("/")
+                                if base.startswith("https://"):
+                                    cfg["api_base"] = base
+                                    cloud_save(cfg)
+                            elif cloud_action == "pair":
+                                code = (form.get("pair_code") or "").strip()
+                                if code:
+                                    pair(code)
+                            elif cloud_action == "unpair":
+                                unpair()
+                            conn.send(b"HTTP/1.1 303 See Other\r\nLocation: /settings\r\nConnection: close\r\n\r\n")
+                            conn.close()
+                            return
                         # WiFi credentials
                         wifi_ssid = (form.get("wifi_ssid") or "").strip()
                         wifi_pwd = (form.get("wifi_password") or "").strip()

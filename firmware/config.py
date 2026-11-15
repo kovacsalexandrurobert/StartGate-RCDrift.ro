@@ -47,3 +47,12 @@ DISPLAY_SCL = 7   # GP7 - I2C1 SCL
 
 # BLE PIN confirmation: show 6-digit PIN on display, user must enter before sending credentials
 BLE_PIN_ENABLED = True
+
+# Optional rcdrift.ro cloud (off until paired — see cloud.py / cloud_creds.json)
+CLOUD_API_BASE = "https://staging.rcdrift.ro"
+
+# Anonymous IR finish beam (phase 4). Set FINISH_SENSOR_ENABLED True when wired.
+FINISH_SENSOR_ENABLED = False
+FINISH_SENSOR_PIN = 10  # GP10 active-low break-beam
+FINISH_MIN_RUN_S = 8.0
+FINISH_DEBOUNCE_MS = 40
