@@ -96,6 +96,10 @@ def _gen_pin():
 
 def _run_start_sequence(uart, lights, settings):
     """Run the full start light sequence (same as web /start)."""
+    from cloud import is_paired
+    if is_paired():
+        uart.write("RCDrift paired: reconnect WiFi before START.\r\n")
+        return
     from settings import get_start_delay
     delay = get_start_delay(settings)
     uart.write("Sequence running...\r\n")

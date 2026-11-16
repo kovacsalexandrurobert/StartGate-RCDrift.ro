@@ -219,3 +219,7 @@ All of these are gitignored. Sanitized templates (placeholders only) live in `do
 - Driving more than the four color channels. Extra lamp trees are wired in parallel on the same SSR, not extra GPIOs.
 - Authenticating the HTTP server. Anyone on the LAN can start a run and can rewrite WiFi credentials.
 - Treating the BLE PIN as a secret. The connect notification repeats it.
+
+## Shared competition control (protocol 2)
+
+Paired mode is server-authoritative: local HTTP/GPIO and the site use the same revision-bound button. Keep standalone starts only while unpaired. Never fall back to a local/BLE start after a paired network failure. During the sequence, cooperative ticks must observe STOP/lease loss; acknowledge stopped/done only after all outputs are off. A new boot persists a monotonic counter and synchronises before claims. Require `claimed is True`; never replay a previously claimed command. Keep token/boot state JSON on-device and outside Git. `PHYSICAL_BUTTON_PIN` stays None until wiring is known. Paired boot/status/manual LED tests cannot flash the race lamps. See docs/STARTLIGHT_CLOUD.md and the simulated protocol tests; do not describe those as physical acceptance.

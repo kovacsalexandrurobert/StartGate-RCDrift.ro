@@ -491,6 +491,10 @@ def serve_control(show_saved=False):
         "h.removeAttribute('data-i18n');"
         "h.removeAttribute('data-i18n-html');"
         "h.innerHTML=list[Math.floor(Math.random()*list.length)]}"
+        "async function syncRaceButton(){try{var r=await fetch('/api/cloud/status');var j=await r.json();"
+        "if(j.paired){var b=document.getElementById('startBtn');b.textContent=(I18N.lang==='en'?j.labelEn:j.label)||'RCDrift';b.disabled=!j.canPress;"
+        "document.getElementById('status').textContent=(I18N.lang==='en'?j.blockedEn:j.blocked)||'RCDrift';}}catch(e){}}"
+        "setInterval(syncRaceButton,1500);syncRaceButton();"
         "async function startRace(){"
         "var btn=document.getElementById('startBtn');"
         "var cd=document.getElementById('countdown');"
@@ -500,6 +504,7 @@ def serve_control(show_saved=False):
         "setLamps([0,0,0,0]);cd.textContent='';"
         "st.textContent=I18N.t('status.starting');"
         "try{var r=await fetch('/start');var j=await r.json();"
+        "if(j.managed){st.textContent=j.error||j.label||(j.ok?\"RCDrift: OK\":\"RCDrift: așteaptă\");return;}"
         "if(j.ok){"
         "var d=j.delay|0;"
         "for(var i=d;i>=1;i--){cd.textContent=i;"
@@ -658,7 +663,18 @@ def handle_request(conn, settings, light_controller):
                     except Exception as e:
                         print("[Web] Settings save error:", e)
             response = serve_settings(settings)
+        elif path == "/api/cloud/status":
+            from cloud import status_snapshot
+            content_type = "application/json"
+            response = json.dumps(status_snapshot())
         elif path == "/start":
+            from cloud import is_paired, local_press
+            if is_paired():
+                reply = local_press()
+                reply["managed"] = True
+                response = json.dumps(reply)
+                _send_all(conn, ("HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % len(response.encode())).encode() + response.encode())
+                return
             global start_delay_value, start_plan
             import random
             from settings import get_start_delay
@@ -693,6 +709,11 @@ def handle_request(conn, settings, light_controller):
             content_type = "application/json"
             response = json.dumps(settings)
         elif path == "/api/led":
+            from cloud import is_paired
+            if is_paired():
+                response = json.dumps({"ok": False, "error": "RCDrift controls the lamps. Unpair for a local lamp test."})
+                _send_all(conn, ("HTTP/1.0 409 Conflict\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % len(response.encode())).encode() + response.encode())
+                return
             # GET /api/led?n=0..3&on=0|1 — manual test; on=1 keeps output active (active-low)
             try:
                 n = _safe_int(query.get("n"), -1)

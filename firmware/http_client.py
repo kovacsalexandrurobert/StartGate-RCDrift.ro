@@ -48,20 +48,33 @@ def request(method, url, data=None, headers=None, timeout=8):
     sock.settimeout(timeout)
     try:
         sock.connect(addr)
-        ssock = ssl.wrap_socket(sock, server_hostname=host)
+        from root_ca import DER
+        import time
+        if time.gmtime()[0] < 2025:
+            import ntptime
+            ntptime.settime()
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.verify_mode = ssl.CERT_REQUIRED
+        context.load_verify_locations(cadata=DER)
+        ssock = context.wrap_socket(sock, server_hostname=host)
         try:
-            ssock.write(req)
+            sent = 0
+            while sent < len(req):
+                n = ssock.write(req[sent:sent + 1024])
+                if not n:
+                    raise OSError("Incomplete HTTPS request")
+                sent += n
             buf = b""
             while True:
                 try:
                     chunk = ssock.read(1024)
                 except Exception:
-                    break
+                    raise OSError("Incomplete HTTPS response")
                 if not chunk:
                     break
                 buf += chunk
-                if len(buf) > 65536:
-                    break
+                if len(buf) > 16384:
+                    raise OSError("HTTPS response too large")
         finally:
             try:
                 ssock.close()
@@ -79,6 +92,23 @@ def request(method, url, data=None, headers=None, timeout=8):
     status_line = head.split(b"\r\n", 1)[0]
     parts = status_line.split()
     status = int(parts[1]) if len(parts) >= 2 else 0
+    lower_head = head.lower()
+    if b"transfer-encoding: chunked" in lower_head:
+        chunks = []
+        while True:
+            line, raw = raw.split(b"\r\n", 1)
+            length = int(line.split(b";", 1)[0], 16)
+            if length == 0:
+                break
+            if len(raw) < length + 2 or raw[length:length + 2] != b"\r\n":
+                raise OSError("Incomplete chunk")
+            chunks.append(raw[:length])
+            raw = raw[length + 2:]
+        raw = b"".join(chunks)
+    else:
+        for line in lower_head.split(b"\r\n"):
+            if line.startswith(b"content-length:") and len(raw) != int(line.split(b":", 1)[1]):
+                raise OSError("Incomplete body")
     try:
         text = raw.decode()
     except Exception:
