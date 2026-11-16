@@ -7,12 +7,14 @@ last_wifi.json
 wifi_country.json
 ble_pending_ip.json
 startlight_config.json
+cloud_creds.json
 **/wifi_creds.json
 **/wifi_networks.json
 **/last_wifi.json
 **/wifi_country.json
 **/ble_pending_ip.json
 **/startlight_config.json
+**/cloud_creds.json
 !docs/examples/*.json.example
 
 # Pico flash is tiny: never treat docs as deployable

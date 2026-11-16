@@ -52,6 +52,11 @@ Runtime is MicroPython: `%` formatting, `machine` / `network` / `bluetooth`, no 
 | `firmware/display.py` | Optional SSD1306 status screens. Failures are swallowed |
 | `firmware/ssd1306.py` | Vendored I2C driver from micropython-ssd1306. Do not restyle |
 | `firmware/onboard_led.py` | `Pin("LED")` via CYW43. No-op if the LED pin is missing |
+| `firmware/cloud.py` | Optional rcdrift.ro client (off until paired). Standalone otherwise |
+| `firmware/http_client.py` | Minimal HTTPS JSON for Pico |
+| `firmware/finish_sensor.py` | Anonymous IR break-beam dual-pass (exit then finish) |
+
+Cloud protocol: `docs/STARTLIGHT_CLOUD.md`. Default API base when enabling cloud: `https://staging.rcdrift.ro`.
 
 `docs/schematic.svg` matches `docs/SCHEMATIC.md`.
 

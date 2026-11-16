@@ -75,6 +75,40 @@ from display import (
     show_ip,
 )
 
+# Optional cloud + finish sensor (standalone if unpaired / sensor off)
+try:
+    from cloud import is_paired, poll as cloud_poll, claim as cloud_claim, post_event as cloud_event, load as cloud_load, save as cloud_save
+    from config import CLOUD_API_BASE
+    _cfg = cloud_load()
+    if not _cfg.get("api_base"):
+        _cfg["api_base"] = CLOUD_API_BASE
+        cloud_save(_cfg)
+except Exception as e:
+    print("[Cloud] Init skipped:", e)
+    def is_paired():
+        return False
+    def cloud_poll():
+        return None
+    def cloud_claim(_):
+        return None
+    def cloud_event(*_a, **_k):
+        return None
+
+try:
+    from finish_sensor import configure as sensor_configure, on_go as sensor_on_go, tick as sensor_tick, reset as sensor_reset, set_callback as sensor_callback
+    from config import FINISH_SENSOR_ENABLED, FINISH_SENSOR_PIN
+    sensor_configure(FINISH_SENSOR_PIN, FINISH_SENSOR_ENABLED)
+except Exception as e:
+    print("[Sensor] Init skipped:", e)
+    def sensor_on_go():
+        pass
+    def sensor_tick():
+        return None
+    def sensor_reset():
+        pass
+    def sensor_callback(_):
+        pass
+
 # WiFi config
 WIFI_TIMEOUT_MS = 15000
 WIFI_RETRY_BEFORE_BLE = 3
@@ -306,46 +340,112 @@ def main():
 
     print("[Boot] ========== Ready ==========")
     print("[OK] Start Light ready at http://" + ip)
+    if is_paired():
+        print("[Cloud] Paired — polling staging/site")
+    else:
+        print("[Cloud] Standalone (not paired)")
     show_ip(ip)
     lights.all_off()
     led_off()  # Ensure onboard LED off when running
 
+    active_command_id = [None]  # mutable cell for callbacks
+
+    def _seq_callback(phase, _sec):
+        if phase == "go":
+            sensor_on_go()
+            if is_paired():
+                cloud_event("go", active_command_id[0])
+        elif phase == "done":
+            if is_paired():
+                cloud_event("done", active_command_id[0])
+
+    def _on_sensor(ev):
+        if is_paired():
+            cloud_event(ev, active_command_id[0])
+
+    try:
+        sensor_callback(_on_sensor)
+    except Exception:
+        pass
+
+    def _run_sequence(plan, command_id=None, local_origin=False):
+        active_command_id[0] = command_id
+        sensor_reset()
+        if is_paired():
+            if local_origin:
+                cloud_event("local_start", command_id)
+            cloud_event("starting", command_id)
+        try:
+            if plan:
+                lights.run_start_sequence(
+                    start_delay=plan["delay"],
+                    red_dur=plan["red_duration"],
+                    rand_min=settings["random_wait_min"],
+                    rand_max=settings["random_wait_max"],
+                    yellow_interval=plan["yellow_interval"],
+                    green_off_delay=plan["green_off_delay"],
+                    rand_wait=plan.get("random_wait"),
+                    callback=_seq_callback,
+                )
+            else:
+                delay = get_start_delay_value()
+                lights.run_start_sequence(
+                    start_delay=delay,
+                    red_dur=settings["red_duration"],
+                    rand_min=settings["random_wait_min"],
+                    rand_max=settings["random_wait_max"],
+                    yellow_interval=settings["yellow_interval"],
+                    green_off_delay=settings["green_off_delay"],
+                    callback=_seq_callback,
+                )
+        except Exception as e:
+            print("[Start] Sequence error:", e)
+            if is_paired():
+                cloud_event("error", command_id)
+        finally:
+            try:
+                lights.all_off()
+            except Exception:
+                pass
+
     try:
         while True:
             if is_start_requested():
-                print("[Start] Sequence triggered")
+                print("[Start] Sequence triggered (local)")
                 plan = get_start_plan()
                 clear_start_requested()
+                _run_sequence(plan, local_origin=True)
+
+            # Cloud START command (only when paired)
+            if is_paired():
                 try:
-                    if plan:
-                        lights.run_start_sequence(
-                            start_delay=plan["delay"],
-                            red_dur=plan["red_duration"],
-                            rand_min=settings["random_wait_min"],
-                            rand_max=settings["random_wait_max"],
-                            yellow_interval=plan["yellow_interval"],
-                            green_off_delay=plan["green_off_delay"],
-                            rand_wait=plan["random_wait"],
-                        )
-                    else:
-                        delay = get_start_delay_value()
-                        lights.run_start_sequence(
-                            start_delay=delay,
-                            red_dur=settings["red_duration"],
-                            rand_min=settings["random_wait_min"],
-                            rand_max=settings["random_wait_max"],
-                            yellow_interval=settings["yellow_interval"],
-                            green_off_delay=settings["green_off_delay"],
-                        )
+                    payload = cloud_poll()
+                    cmd = (payload or {}).get("pendingCommand") if payload else None
+                    if cmd and cmd.get("commandId"):
+                        cid = cmd["commandId"]
+                        claimed = cloud_claim(cid)
+                        if claimed and claimed.get("ok"):
+                            print("[Cloud] Claimed START", cid)
+                            from settings import get_start_delay
+                            import random
+                            delay = int(get_start_delay(settings))
+                            plan = {
+                                "delay": delay,
+                                "red_duration": float(settings["red_duration"]),
+                                "random_wait": float(random.uniform(
+                                    settings["random_wait_min"], settings["random_wait_max"]
+                                )),
+                                "yellow_interval": float(settings["yellow_interval"]),
+                                "green_off_delay": float(settings["green_off_delay"]),
+                            }
+                            _run_sequence(plan, command_id=cid, local_origin=False)
                 except Exception as e:
-                    print("[Start] Sequence error:", e)
-                finally:
-                    # HTTP was blocked during the sequence; ensure lamps are dark
-                    # before accepting the next browser request.
-                    try:
-                        lights.all_off()
-                    except Exception:
-                        pass
+                    print("[Cloud] Poll/claim error:", e)
+
+            try:
+                sensor_tick()
+            except Exception:
+                pass
 
             run_server(settings, lights)
             time.sleep_ms(50)

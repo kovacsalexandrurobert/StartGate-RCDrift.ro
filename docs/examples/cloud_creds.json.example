@@ -1,0 +1,8 @@
+{
+  "api_base": "https://staging.rcdrift.ro",
+  "device_id": "",
+  "device_token": "",
+  "device_public_id": "",
+  "event_id": "",
+  "enabled": false
+}
