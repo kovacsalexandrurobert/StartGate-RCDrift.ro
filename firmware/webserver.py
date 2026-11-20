@@ -64,6 +64,36 @@ def _get_wifi_password():
     return ""  # Never show password in HTML
 
 
+def _expected_pin(settings):
+    return str((settings or {}).get("web_pin") or "9009")
+
+
+def _parse_cookies(raw):
+    """Parse Cookie header from raw HTTP request bytes/str."""
+    if isinstance(raw, bytes):
+        try:
+            text = raw.decode()
+        except Exception:
+            return {}
+    else:
+        text = raw
+    out = {}
+    for line in text.split("\r\n"):
+        if line.lower().startswith("cookie:"):
+            for part in line.split(":", 1)[1].split(";"):
+                part = part.strip()
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    val = v.strip().replace("%3D", "=").replace("%3A", ":")
+                    out[k.strip()] = val
+            break
+    return out
+
+
+def _pin_unlocked(settings, cookies):
+    return cookies.get("sl_pin") == _expected_pin(settings)
+
+
 def _send_all(conn, data):
     """Send every byte. Pico/MicroPython socket.send() often writes only a prefix.
 
@@ -195,6 +225,12 @@ def _i18n_js():
         "'l.fixed':'Fixed delay (sec)','l.dmin':'Random delay min (sec)',"
         "'l.dmax':'Random delay max (sec)',"
         "'btn.save':'Save settings',"
+        "'p.pin':'Local PIN','l.pin':'Web PIN',"
+        "'ph.pin':'4+ digits','pin.hint':'Asked on every new browser. Stored in startlight_config.json.',"
+        "'pin.h1':'PIN.<br><em>LOCAL.<\\/em>',"
+        "'pin.lead':'Enter the local control PIN to use this Start Light on the LAN.',"
+        "'pin.label':'PIN','btn.pin':'Unlock','pin.bad':'Wrong PIN.',"
+        "'title.pin':'Start Light - PIN',"
         "'p.led':'LED test',"
         "'led.hint':'Checked = ON (active-low SSR). A start sequence can clear lamps while boxes stay checked.',"
         "'led.0':'Red (GP2)','led.1':'Yellow 1 (GP3)',"
@@ -231,6 +267,12 @@ def _i18n_js():
         "'l.fixed':'Delay fix (sec)','l.dmin':'Delay random min (sec)',"
         "'l.dmax':'Delay random max (sec)',"
         "'btn.save':'Salveaza setari',"
+        "'p.pin':'PIN local','l.pin':'PIN web',"
+        "'ph.pin':'Minim 4 cifre','pin.hint':'Cerut in browser. Se schimba in startlight_config.json sau aici.',"
+        "'pin.h1':'PIN.<br><em>LOCAL.<\\/em>',"
+        "'pin.lead':'Introdu PIN-ul local ca sa folosesti Start Light pe retea.',"
+        "'pin.label':'PIN','btn.pin':'Deblocheaza','pin.bad':'PIN gresit.',"
+        "'title.pin':'Start Light - PIN',"
         "'p.led':'Test LED',"
         "'led.hint':'Bifat = APRINS (SSR active-low). O secventa de start poate stinge luminile cat timp bifele raman.',"
         "'led.0':'Rosu (GP2)','led.1':'Galben 1 (GP3)',"
@@ -444,6 +486,13 @@ def serve_settings(settings):
         "<input type=\"number\" name=\"start_delay_random_max\" min=\"1\" max=\"60\" value=\""
         + str(settings["start_delay_random_max"]) + "\">"
         "</div>"
+        "<div class=\"panel\"><h2 data-i18n=\"p.pin\">PIN local</h2>"
+        "<p class=\"hint\" data-i18n=\"pin.hint\">Cerut in browser. Se schimba in startlight_config.json sau aici.</p>"
+        "<label data-i18n=\"l.pin\">PIN web</label>"
+        "<input type=\"text\" name=\"web_pin\" inputmode=\"numeric\" maxlength=\"16\" "
+        "value=\"" + html_escape(str(settings.get("web_pin") or "9009")) + "\" "
+        "data-i18n-placeholder=\"ph.pin\" placeholder=\"Minim 4 cifre\">"
+        "</div>"
         "<button class=\"btn\" type=\"submit\" data-i18n=\"btn.save\">Salveaza setari</button>"
         "</form>"
         + _cloud_panel()
@@ -473,6 +522,28 @@ def serve_settings(settings):
         "</script>"
     )
     return _shell("title.settings", "settings", body)
+
+
+def serve_pin(bad=False):
+    """Local LAN unlock — PIN from startlight_config.json (default 9009)."""
+    flash = (
+        "<p class=\"flash\" style=\"color:#f34ebc\" data-i18n=\"pin.bad\">PIN gresit.</p>"
+        if bad else ""
+    )
+    body = (
+        "<h1 data-i18n=\"pin.h1\" data-i18n-html>PIN.<br><em>LOCAL.</em></h1>"
+        "<p class=\"lead\" data-i18n=\"pin.lead\">Introdu PIN-ul local ca sa folosesti "
+        "Start Light pe retea.</p>"
+        + flash
+        + "<form method=\"POST\" action=\"/pin\" class=\"panel\">"
+        "<label data-i18n=\"pin.label\">PIN</label>"
+        "<input type=\"password\" name=\"pin\" inputmode=\"numeric\" maxlength=\"16\" "
+        "autocomplete=\"one-time-code\" required autofocus>"
+        "<button class=\"btn\" type=\"submit\" style=\"margin-top:14px\" "
+        "data-i18n=\"btn.pin\">Deblocheaza</button>"
+        "</form>"
+    )
+    return _shell("title.pin", "control", body)
 
 
 def serve_control(show_saved=False):
@@ -665,9 +736,68 @@ def handle_request(conn, settings, light_controller):
             return
 
         path = path.rstrip("/") or "/"
+        cookies = _parse_cookies(data)
         print("[Web] %s %s" % (method, path))
         response = ""
         content_type = "text/html"
+
+        # Local PIN gate (LAN). /pin is the only unlocked HTML entry.
+        if path == "/pin":
+            if method == "POST" and body:
+                form = parse_form(body)
+                pin = str((form or {}).get("pin") or "").strip()
+                if pin and pin == _expected_pin(settings):
+                    print("[Web] PIN ok")
+                    extra_headers = (
+                        b"Set-Cookie: sl_pin="
+                        + pin.encode()
+                        + b"; Path=/; Max-Age=604800; SameSite=Lax\r\n"
+                    )
+                    _send_all(
+                        conn,
+                        b"HTTP/1.1 303 See Other\r\nLocation: /\r\n"
+                        + extra_headers
+                        + b"Connection: close\r\n\r\n",
+                    )
+                    conn.close()
+                    return
+                print("[Web] PIN rejected")
+                response = serve_pin(bad=True)
+            else:
+                response = serve_pin(bad=False)
+            if isinstance(response, str):
+                body_bytes = response.encode("utf-8")
+            else:
+                body_bytes = response
+            _send_all(
+                conn,
+                b"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
+                b"Content-Length: " + str(len(body_bytes)).encode() + b"\r\n"
+                b"Cache-Control: no-store\r\nConnection: close\r\n\r\n",
+            )
+            _send_all(conn, body_bytes)
+            conn.close()
+            return
+
+        if not _pin_unlocked(settings, cookies):
+            if path.startswith("/api") or path == "/start":
+                msg = json.dumps({"ok": False, "error": "PIN required", "auth": False})
+                raw = msg.encode()
+                _send_all(
+                    conn,
+                    b"HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\n"
+                    b"Content-Length: " + str(len(raw)).encode() + b"\r\n"
+                    b"Connection: close\r\n\r\n" + raw,
+                )
+                conn.close()
+                return
+            _send_all(
+                conn,
+                b"HTTP/1.1 303 See Other\r\nLocation: /pin\r\n"
+                b"Cache-Control: no-store\r\nConnection: close\r\n\r\n",
+            )
+            conn.close()
+            return
 
         if path == "/" or path == "/control":
             response = serve_control(show_saved=(query.get("saved") == "1"))
@@ -734,11 +864,24 @@ def handle_request(conn, settings, light_controller):
                         settings["start_delay_fixed"] = _safe_int(form.get("start_delay_fixed"), 5)
                         settings["start_delay_random_min"] = _safe_int(form.get("start_delay_random_min"), 5)
                         settings["start_delay_random_max"] = _safe_int(form.get("start_delay_random_max"), 20)
+                        new_pin = str(form.get("web_pin") or "").strip()
+                        if new_pin and len(new_pin) <= 16:
+                            settings["web_pin"] = new_pin
                         from settings import save
                         save(settings)
                         print("[Web] Settings saved, redirecting to /")
-                        # Redirect to main page with success message
-                        conn.send(b"HTTP/1.1 303 See Other\r\nLocation: /?saved=1\r\nConnection: close\r\n\r\n")
+                        # Refresh cookie if PIN changed so this browser stays unlocked
+                        pin_cookie = (
+                            b"Set-Cookie: sl_pin="
+                            + _expected_pin(settings).encode()
+                            + b"; Path=/; Max-Age=604800; SameSite=Lax\r\n"
+                        )
+                        _send_all(
+                            conn,
+                            b"HTTP/1.1 303 See Other\r\nLocation: /?saved=1\r\n"
+                            + pin_cookie
+                            + b"Connection: close\r\n\r\n",
+                        )
                         conn.close()
                         return
                     except Exception as e:
@@ -788,7 +931,9 @@ def handle_request(conn, settings, light_controller):
             response = json.dumps(start_plan)
         elif path == "/api/settings":
             content_type = "application/json"
-            response = json.dumps(settings)
+            public = dict(settings)
+            public.pop("web_pin", None)
+            response = json.dumps(public)
         elif path == "/api/led":
             from cloud import is_paired
             if is_paired():

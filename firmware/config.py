@@ -32,6 +32,9 @@ START_DELAY_RANDOM_MAX = 20
 # Config file path
 CONFIG_FILE = "startlight_config.json"
 
+# Local HTTP gate PIN (override in startlight_config.json → "web_pin")
+WEB_PIN = "9009"
+
 # WiFi country code (set before WLAN init on Pico W / Pico 2 W)
 # Default for Romania; can be overridden via BLE on first init
 # Use 2-letter ISO code: "RO", "US", "GB", "DE", etc.
