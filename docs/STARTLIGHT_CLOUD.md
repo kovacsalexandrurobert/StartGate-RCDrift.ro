@@ -1,34 +1,58 @@
-# Start Light — protocol 2, sincronizat cu RCDrift
+# Start Light ↔ rcdrift.ro (protocol 2)
 
-Firmware-ul și site-ul folosesc un singur pas de concurs. Clientul asociat folosește implicit **https://staging.rcdrift.ro**. Nu se schimbă automat destinația spre producție și nu se copiază credențiale pe PC sau în Git.
+Optional cloud overlay. **Standalone local HTTP/BLE starts always work while unpaired.** Pairing is opt-in from the device Settings page or organizer **Configurare semafor**.
 
-## Ce apasă organizatorul
+Default API base when enabling cloud: `https://staging.rcdrift.ro` (does not auto-switch to production).
 
-1. Salvează pregătirea și pornește calificările în RCDrift. Împerechează Pico folosind codul din Configurare semafor. Instalează toate modulele noi `.py` înainte de împerechere; protocolul vechi este blocat pentru conducerea sincronizată.
-2. Un singur buton principal afișează **START**, apoi așteaptă confirmarea verdelui/stingerii lămpilor și notele arbitrilor. După toate notele, același buton devine **Următorul pilot**. Următorul pilot nu pornește singur: încă o apăsare când este pregătit trimite START.
-3. Toți piloții fac manșa 1, apoi manșa 2. În dueluri: prezentare → START prima rulare → pregătirea pozițiilor inversate → START a doua rulare → votare → duelul următor. Completul, corecturile și rezultatele rămân gestionate de RCDrift.
-4. START-ul din pagina locală și intrarea opțională GPIO folosesc aceeași comandă. Un dispozitiv nu poate publica puncte, administra roluri sau relua singur un concurs pus în pauză.
+## Standalone (unpaired)
 
-## Pauză, conexiune și repornire
+- Local `GET /start`, web UI, and BLE `START` / `GO` / `RUN` run `run_start_sequence` only.
+- No cloud poll, claim, or events.
+- Unpair explicitly to leave cloud mode; after unpair the device is standalone again.
+- When **paired**, local/BLE start does **not** fall back to a private sequence if the site cannot confirm — use **Dezleagă** / unpair for independent use.
 
-- Pauza invalidează START-urile neexecutate. În secvență, firmware-ul verifică periodic pasul/permisiunea și oprește lămpile la pauză, schimbarea sesiunii sau pierderea lease-ului de 5 secunde. Timpul de rețea/DNS/firmware nu este o garanție de oprire în timp real; aceasta nu este o instalație de oprire de urgență.
-- Confirmarea `stopped` se trimite numai după `all_off()`. RCDrift păstrează pauza, pilotul, manșa și notele. Reluarea cere confirmarea stingerii și nu pornește automat o nouă secvență.
-- La repornire, Pico persistă un contor în `cloud_state.json`, oprește lămpile și sincronizează sesiunea înainte de comenzi. Un contor vechi, o comandă deja preluată ori o apăsare retrimisă nu pot porni din nou lămpile.
-- În modul împerecheat nu există fallback START prin HTTP/BLE când site-ul nu poate confirma. Pentru folosire independentă, dezleagă explicit dispozitivul; modul standalone își păstrează secvența unică și reglajele.
-- `done` confirmă **stingerea lămpilor**, nu sosirea mașinii. Senzorul IR rămâne opțional, dezactivat implicit; `finish` nu schimbă singur pilotul sau notele.
+## Organizer flow (paired)
 
-## Buton pe cutie
+1. Save prep and start qualifications in RCDrift. Pair the Pico with the code from **Configurare semafor**. Install all new `.py` modules before pairing; old protocol is blocked for synchronized control.
+2. One main button shows **START**, then waits for green/off confirmation and judges’ scores. After all scores, the same button becomes **Următorul pilot**. The next driver does not auto-start.
+3. Qualifying: all drivers run 1, then run 2. Battles: presentation → START first run → swap sides → START second run → vote → next duel.
+4. Local page START and optional GPIO use the same revision-bound command. The device cannot publish points, manage roles, or resume a paused event alone.
 
-În sursa inițială nu este definit un pin START. `PHYSICAL_BUTTON_PIN = None` rămâne dezactivat până la cunoașterea cablajului. Pentru un buton cablat la GND configurează explicit un pin liber; codul folosește pull-up, debounce și cere eliberare după boot. Nu folosi GP2–GP5, GP6/GP7 sau pinul senzorului. Butonul START din pagina locală funcționează fără cablaj GPIO suplimentar.
+## Pause, lease, reboot
 
-## Transport
+- Pause invalidates unused STARTs. During a sequence the firmware re-checks step/permission and stops lamps on pause, session change, or a lost 5 s lease. Network latency is not a hard e-stop.
+- `stopped` is acknowledged only after `all_off()`. Resume does not auto-start a new sequence.
+- On reboot, Pico persists a boot counter in `cloud_state.json`, turns lamps off, and syncs before claims. Stale counters / already-claimed commands cannot replay START.
+- `done` means **lamps off**, not car arrival. IR finish sensor stays optional and off by default.
 
-Protocolul 2 folosește tokenul dispozitivului și numai evenimentul/categoria împerecheate. Poll-ul conține revizia, pasul, STOP/sync, comanda atribuită acestui dispozitiv și lease-ul. `claim` cere sesiunea curentă și returnează `claimed: true` o singură dată. `events` primește `sync`, `stopped`, `go`, `done` și evenimentele opționale de senzor; confirmările vechi sunt respinse. `button` folosește `requestId` stabil pentru retrimitere, fără dublare.
+## Physical button
 
-HTTPS verifică CA și hostname; nu există fallback CERT_NONE. `root_ca.py` conține numai certificatul public ISRG Root X1, iar `ntptime.py` inițializează ceasul UTC dacă este necesar. Dacă hostingul schimbă autoritatea de certificare, actualizează CA după verificare. Nu copia CA-ul unui antivirus de pe PC. Referințe: [MicroPython SSL](https://docs.micropython.org/en/v1.26.0/library/ssl.html), [ISRG](https://letsencrypt.org/certificates/), [NTP de referință](https://github.com/micropython/micropython-lib/tree/master/micropython/net/ntptime).
+`PHYSICAL_BUTTON_PIN = None` until wiring is known. For a button to GND, set a free pin (not GP2–GP5, GP6/GP7, or the finish pin). Pull-up, debounce, release-after-boot. Local web START works without extra GPIO.
 
-## Instalare și probe
+## Device API (paired)
 
-Copiază numai `firmware/*.py` în rădăcina Pico. Păstrează fișierele WiFi/reglaje/token de pe dispozitiv; arhiva de sursă nu le conține. Nu instala UF2 de alt model. Vezi [DEPLOY](DEPLOY.md).
+Auth: `Authorization: Bearer <deviceToken>` except pair.
 
-`python -m unittest discover -s tests -v` folosește GPIO/ceas/transport simulate și codul real de secvență/coordonare. `python tests/staging_tls_smoke.py` verifică numai HTTPS public și versiunea staging, fără token sau acționare. Nu reprezintă o probă electrică pe Pico, SSR, lămpi sau senzor; aceasta se face după încărcarea firmware-ului pe dispozitivul conectat.
+| Call | Role |
+|------|------|
+| `POST /api/startlight/pair` | One-shot code → token; site stores hash only |
+| `GET /api/startlight/poll` | Control revision, STOP/sync, pending START, lease (~1 s poll) |
+| `POST /api/startlight/claim` | Atomic claim; require `claimed: true` |
+| `POST /api/startlight/events` | `sync` / `stopped` / `go` / `done` (+ optional sensor) |
+| `POST /api/startlight/button` | Stable `requestId` for retries |
+
+HTTPS verifies public CA + hostname (`root_ca.py` ISRG Root X1, `ntptime.py` for UTC). No `CERT_NONE` fallback.
+
+## Organizer manage API
+
+`POST /api/startlight/manage` (session + event manage): `createPairing`, `list` / `unbind` / `revokeDevice`, queue helpers, cue start/cancel as implemented on the site.
+
+## Finish sensor (phase 4)
+
+Anonymous IR break-beam after green: break #1 = exit, break #2 (after min run) = finish. No car ID yet. Does not advance drivers or scores alone.
+
+## Install / tests
+
+Copy only `firmware/*.py` to the Pico root. Keep on-device WiFi/timing/token JSON; do not commit them. See [DEPLOY](DEPLOY.md).
+
+`python -m unittest discover -s tests -v` uses simulated GPIO/clock/transport. `python tests/staging_tls_smoke.py` checks public staging HTTPS only. Neither replaces physical acceptance on wired Pico + SSR + lamps.
