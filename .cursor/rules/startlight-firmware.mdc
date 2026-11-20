@@ -33,5 +33,7 @@ pin.value(1)
 
 - Keep the web UI as inline HTML in `firmware/webserver.py`. A settings POST must call `settings.save`.
 - Reflect status on the lamps (`lights.blink_status`), the onboard LED (`onboard_led`), and the OLED (`display.py`). A missing OLED must not abort boot.
+- Cloud (`cloud.py`) is optional: unpaired = full standalone local HTTP/BLE. Never require rcdrift.ro to start lamps. Paired devices short-poll HTTPS; do not block the start sequence on poll.
+- Finish IR beam (`finish_sensor.py`): after green, break #1 = exit, break #2 = finish; off by default (`FINISH_SENSOR_ENABLED`).
 - `run_server` accepts one connection, then returns. The start sequence blocks that loop until the lamps finish.
 - Put new documentation under `docs/`. Put new device code under `firmware/` as `.py` only.
