@@ -1,55 +1,58 @@
-# Start Light ↔ rcdrift.ro protocol
+# Start Light ↔ rcdrift.ro (protocol 2)
 
-Optional cloud overlay. **Standalone local HTTP/BLE starts always work** with no pairing.
+Optional cloud overlay. **Standalone local HTTP/BLE starts always work while unpaired.** Pairing is opt-in from the device Settings page or organizer **Configurare semafor**.
 
-## Defaults
+Default API base when enabling cloud: `https://staging.rcdrift.ro` (does not auto-switch to production).
 
-| Setting | Value |
-|---------|--------|
-| Cloud | Off until paired |
-| API base (when enabled) | `https://staging.rcdrift.ro` until production promote |
-| Poll | 1 s short poll (long-poll only if Pico TLS proves stable) |
-| Auth | Device bearer token after pairing code |
+## Standalone (unpaired)
 
-## Device endpoints
+- Local `GET /start`, web UI, and BLE `START` / `GO` / `RUN` run `run_start_sequence` only.
+- No cloud poll, claim, or events.
+- Unpair explicitly to leave cloud mode; after unpair the device is standalone again.
+- When **paired**, local/BLE start does **not** fall back to a private sequence if the site cannot confirm — use **Dezleagă** / unpair for independent use.
 
-All device calls use `Authorization: Bearer <deviceToken>` except pair.
+## Organizer flow (paired)
 
-### `POST /api/startlight/pair`
+1. Save prep and start qualifications in RCDrift. Pair the Pico with the code from **Configurare semafor**. Install all new `.py` modules before pairing; old protocol is blocked for synchronized control.
+2. One main button shows **START**, then waits for green/off confirmation and judges’ scores. After all scores, the same button becomes **Următorul pilot**. The next driver does not auto-start.
+3. Qualifying: all drivers run 1, then run 2. Battles: presentation → START first run → swap sides → START second run → vote → next duel.
+4. Local page START and optional GPIO use the same revision-bound command. The device cannot publish points, manage roles, or resume a paused event alone.
 
-Body: `{ "code": "ABC123", "devicePublicId": "optional-stable-id", "label": "Gate 1", "firmwareVersion": "…" }`
+## Pause, lease, reboot
 
-Returns once: `{ "ok": true, "deviceId", "deviceToken", "eventId", "apiBase" }`. Store token on device; site keeps hash only.
+- Pause invalidates unused STARTs. During a sequence the firmware re-checks step/permission and stops lamps on pause, session change, or a lost 5 s lease. Network latency is not a hard e-stop.
+- `stopped` is acknowledged only after `all_off()`. Resume does not auto-start a new sequence.
+- On reboot, Pico persists a boot counter in `cloud_state.json`, turns lamps off, and syncs before claims. Stale counters / already-claimed commands cannot replay START.
+- `done` means **lamps off**, not car arrival. IR finish sensor stays optional and off by default.
 
-### `GET /api/startlight/poll`
+## Physical button
 
-Returns `{ "queue", "pendingCommand", "cue", "serverTime", "bound" }`. Empty `pendingCommand` when idle. Short-poll every ~1 s from firmware.
+`PHYSICAL_BUTTON_PIN = None` until wiring is known. For a button to GND, set a free pin (not GP2–GP5, GP6/GP7, or the finish pin). Pull-up, debounce, release-after-boot. Local web START works without extra GPIO.
 
-### `POST /api/startlight/claim`
+## Device API (paired)
 
-Body: `{ "commandId": "…" }` — atomic claim of a START command.
+Auth: `Authorization: Bearer <deviceToken>` except pair.
 
-### `POST /api/startlight/events`
+| Call | Role |
+|------|------|
+| `POST /api/startlight/pair` | One-shot code → token; site stores hash only |
+| `GET /api/startlight/poll` | Control revision, STOP/sync, pending START, lease (~1 s poll) |
+| `POST /api/startlight/claim` | Atomic claim; require `claimed: true` |
+| `POST /api/startlight/events` | `sync` / `stopped` / `go` / `done` (+ optional sensor) |
+| `POST /api/startlight/button` | Stable `requestId` for retries |
 
-Body: `{ "commandId"?, "type": "starting"|"go"|"done"|"error"|"local_start"|"exit"|"finish", "at": ISO8601, "detail"? }`
+HTTPS verifies public CA + hostname (`root_ca.py` ISRG Root X1, `ntptime.py` for UTC). No `CERT_NONE` fallback.
 
-## Organizer (session)
+## Organizer manage API
 
-`POST /api/startlight/manage` with `sameOrigin` + event manage permission:
-
-- `createPairing` → short-lived code
-- `list` / `unbind` / `revokeDevice`
-- `setQueue` / `suggestQueue`
-- `startCue` / `cancelCue`
-
-## Standalone
-
-Unpaired devices never call these APIs. Local `/start` and BLE `START` run `run_start_sequence` only. When paired, local start also emits `local_start` + sequence events if the site is reachable.
+`POST /api/startlight/manage` (session + event manage): `createPairing`, `list` / `unbind` / `revokeDevice`, queue helpers, cue start/cancel as implemented on the site.
 
 ## Finish sensor (phase 4)
 
-Anonymous IR break-beam: after green, break #1 = exit, break #2 (after min run time) = finish. No car ID until a later phase.
+Anonymous IR break-beam after green: break #1 = exit, break #2 (after min run) = finish. No car ID yet. Does not advance drivers or scores alone.
 
-## TLS note (spike)
+## Install / tests
 
-MicroPython on Pico W / Pico 2 W should use short HTTPS GET/POST with small JSON. Prefer 1 s poll over multi-second long-poll until a device soak test confirms TLS sockets stay healthy under CYW43 + SoftI2C OLED.
+Copy only `firmware/*.py` to the Pico root. Keep on-device WiFi/timing/token JSON; do not commit them. See [DEPLOY](DEPLOY.md).
+
+`python -m unittest discover -s tests -v` uses simulated GPIO/clock/transport. `python tests/staging_tls_smoke.py` checks public staging HTTPS only. Neither replaces physical acceptance on wired Pico + SSR + lamps.

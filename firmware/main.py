@@ -44,6 +44,7 @@ except Exception as e:
     print("[WiFi] Country init:", e)
 
 from lights import LightController
+from race_control import RaceCoordinator, SequenceStopped, PhysicalButton
 from settings import load
 from wifi_config import (
     load_credentials,
@@ -172,37 +173,47 @@ def connect_wifi(tick_callback=None):
     return False
 
 
+def _status_lamps(lights, color, count, interval):
+    if is_paired():
+        lights.all_off()
+    else:
+        lights.blink_status(color, count, interval)
+
+
 def boot_self_test(lights):
     """Run self-test: cycle through all configured light sets"""
     print("[Boot] Self-test: cycling lights...")
     show_boot()
-    lights.run_self_test()
+    if is_paired():
+        lights.all_off()
+    else:
+        lights.run_self_test()
     print("[Boot] Self-test done")
 
 
 def boot_wifi_success(lights):
     """External: green 5x. Onboard LED: on, blink 5x, leave off"""
     print("[Boot] WiFi OK - green blink")
-    lights.blink_status("green", 5, BOOT_BLINK_INTERVAL)
+    _status_lamps(lights,"green", 5, BOOT_BLINK_INTERVAL)
     status_connected()
 
 
 def boot_wifi_connecting(lights):
     """External: yellow once. Onboard LED: blink every second (during connect_wifi)"""
-    lights.blink_status("yellow", 1, BOOT_BLINK_INTERVAL)
+    _status_lamps(lights,"yellow", 1, BOOT_BLINK_INTERVAL)
 
 
 def boot_wifi_error(lights):
     """External: red 2x. Onboard LED: blink 3x, wait 3 sec"""
     print("[WiFi] Failed - red blink, retrying in 3 sec...")
-    lights.blink_status("red", 2, BOOT_BLINK_INTERVAL)
+    _status_lamps(lights,"red", 2, BOOT_BLINK_INTERVAL)
     status_not_connected()
 
 
 def run_ble_credential_mode(lights, settings):
     """WiFi failed after 3 tries - enable BLE, wait for credentials or BLE START command."""
     print("[BLE] WiFi failed 3x - enabling BLE for new credentials...")
-    lights.blink_status("red", 2, 0.3)
+    _status_lamps(lights,"red", 2, 0.3)
     time.sleep(1)
     # Deactivate WiFi before BLE (one CYW43 radio — Pico W and Pico 2 W)
     try:
@@ -216,7 +227,7 @@ def run_ble_credential_mode(lights, settings):
     # Display: PIN + prompts are handled inside wait_for_credentials (do not call show_ble_waiting here — it would overwrite the PIN screen)
     try:
         from ble_uart import wait_for_credentials
-        lights.blink_status("yellow", 1, 0.5)  # Indicate BLE mode
+        _status_lamps(lights,"yellow", 1, 0.5)  # Indicate BLE mode
         ssid, pwd = wait_for_credentials(
             timeout_sec=300,
             tick_callback=status_ble_tick,
@@ -225,14 +236,14 @@ def run_ble_credential_mode(lights, settings):
         )
         if ssid:
             print("[BLE] Credentials saved! Rebooting...")
-            lights.blink_status("green", 3, 0.2)  # Success
+            _status_lamps(lights,"green", 3, 0.2)  # Success
             time.sleep(1)
             machine.reset()
         else:
             print("[BLE] Timeout - retrying WiFi...")
     except Exception as e:
         print("[BLE] Error:", e)
-        lights.blink_status("red", 5, 0.2)  # Error
+        _status_lamps(lights,"red", 5, 0.2)  # Error
     # Fall through - will retry WiFi on next loop
 
 
@@ -348,105 +359,84 @@ def main():
     lights.all_off()
     led_off()  # Ensure onboard LED off when running
 
-    active_command_id = [None]  # mutable cell for callbacks
+    import cloud
+    coordinator = RaceCoordinator(cloud, lights, sensor_reset)
+    cloud.set_coordinator(coordinator)
+    button = PhysicalButton()
+    try:
+        from config import PHYSICAL_BUTTON_PIN, GPIO_PINS, FINISH_SENSOR_PIN
+        # No wiring is inferred. Explicitly configure an unused pin for a case button.
+        if PHYSICAL_BUTTON_PIN is not None:
+            if PHYSICAL_BUTTON_PIN in list(GPIO_PINS) + [6, 7, FINISH_SENSOR_PIN]:
+                raise ValueError("START pin conflicts with lamps/display/sensor")
+            button = PhysicalButton(machine.Pin(PHYSICAL_BUTTON_PIN, machine.Pin.IN, machine.Pin.PULL_UP))
+    except Exception as e:
+        print("[Button] Disabled:", type(e).__name__)
 
     def _seq_callback(phase, _sec):
         if phase == "go":
             sensor_on_go()
             if is_paired():
-                cloud_event("go", active_command_id[0])
-        elif phase == "done":
-            if is_paired():
-                cloud_event("done", active_command_id[0])
+                coordinator.report("go")
+        elif phase == "done" and is_paired():
+            coordinator.report("done")
 
-    def _on_sensor(ev):
+    sensor_callback(coordinator.sensor_event)
+
+    def _sequence_tick():
         if is_paired():
-            cloud_event(ev, active_command_id[0])
+            coordinator.tick()
+        sensor_tick()
 
-    try:
-        sensor_callback(_on_sensor)
-    except Exception:
-        pass
-
-    def _run_sequence(plan, command_id=None, local_origin=False):
-        active_command_id[0] = command_id
+    def _run_sequence(plan=None, command_id=None):
         sensor_reset()
-        if is_paired():
-            if local_origin:
-                cloud_event("local_start", command_id)
-            cloud_event("starting", command_id)
+        if plan is None:
+            from settings import get_start_delay
+            import random
+            plan = {"delay": int(get_start_delay(settings)),
+                    "red_duration": settings["red_duration"],
+                    "random_wait": random.uniform(settings["random_wait_min"], settings["random_wait_max"]),
+                    "yellow_interval": settings["yellow_interval"],
+                    "green_off_delay": settings["green_off_delay"]}
         try:
-            if plan:
-                lights.run_start_sequence(
-                    start_delay=plan["delay"],
-                    red_dur=plan["red_duration"],
-                    rand_min=settings["random_wait_min"],
-                    rand_max=settings["random_wait_max"],
-                    yellow_interval=plan["yellow_interval"],
-                    green_off_delay=plan["green_off_delay"],
-                    rand_wait=plan.get("random_wait"),
-                    callback=_seq_callback,
-                )
-            else:
-                delay = get_start_delay_value()
-                lights.run_start_sequence(
-                    start_delay=delay,
-                    red_dur=settings["red_duration"],
-                    rand_min=settings["random_wait_min"],
-                    rand_max=settings["random_wait_max"],
-                    yellow_interval=settings["yellow_interval"],
-                    green_off_delay=settings["green_off_delay"],
-                    callback=_seq_callback,
-                )
+            lights.run_start_sequence(
+                start_delay=plan["delay"], red_dur=plan["red_duration"],
+                rand_min=settings["random_wait_min"], rand_max=settings["random_wait_max"],
+                yellow_interval=plan["yellow_interval"], green_off_delay=plan["green_off_delay"],
+                rand_wait=plan.get("random_wait"), callback=_seq_callback,
+                tick=_sequence_tick)
+        except SequenceStopped:
+            lights.all_off()
+            coordinator.stop()
+            print("[Start] Stopped by competition / lost connection")
         except Exception as e:
-            print("[Start] Sequence error:", e)
-            if is_paired():
-                cloud_event("error", command_id)
+            lights.all_off()
+            coordinator.stop()
+            print("[Start] Failed:", type(e).__name__)
         finally:
-            try:
-                lights.all_off()
-            except Exception:
-                pass
+            lights.all_off()
 
     try:
         while True:
-            if is_start_requested():
-                print("[Start] Sequence triggered (local)")
+            physical = button.pressed()
+            if physical or is_start_requested():
                 plan = get_start_plan()
                 clear_start_requested()
-                _run_sequence(plan, local_origin=True)
-
-            # Cloud START command (only when paired)
+                if is_paired():
+                    coordinator.press()
+                else:
+                    _run_sequence(plan if not physical else None)
             if is_paired():
                 try:
-                    payload = cloud_poll()
-                    cmd = (payload or {}).get("pendingCommand") if payload else None
-                    if cmd and cmd.get("commandId"):
-                        cid = cmd["commandId"]
-                        claimed = cloud_claim(cid)
-                        if claimed and claimed.get("ok"):
-                            print("[Cloud] Claimed START", cid)
-                            from settings import get_start_delay
-                            import random
-                            delay = int(get_start_delay(settings))
-                            plan = {
-                                "delay": delay,
-                                "red_duration": float(settings["red_duration"]),
-                                "random_wait": float(random.uniform(
-                                    settings["random_wait_min"], settings["random_wait_max"]
-                                )),
-                                "yellow_interval": float(settings["yellow_interval"]),
-                                "green_off_delay": float(settings["green_off_delay"]),
-                            }
-                            _run_sequence(plan, command_id=cid, local_origin=False)
+                    command_id = coordinator.tick()
+                    if command_id:
+                        _run_sequence(command_id=command_id)
+                except SequenceStopped:
+                    coordinator.stop()
                 except Exception as e:
-                    print("[Cloud] Poll/claim error:", e)
-
-            try:
-                sensor_tick()
-            except Exception:
-                pass
-
+                    coordinator.stop()
+                    print("[Cloud] Stopped:", type(e).__name__)
+            sensor_tick()
             run_server(settings, lights)
             time.sleep_ms(50)
     except KeyboardInterrupt:

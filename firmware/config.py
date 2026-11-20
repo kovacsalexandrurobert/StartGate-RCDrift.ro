@@ -56,3 +56,6 @@ FINISH_SENSOR_ENABLED = False
 FINISH_SENSOR_PIN = 10  # GP10 active-low break-beam
 FINISH_MIN_RUN_S = 8.0
 FINISH_DEBOUNCE_MS = 40
+
+# Optional case-mounted START/next button, active-low to GND. None until wiring is known.
+PHYSICAL_BUTTON_PIN = None

@@ -11,6 +11,11 @@ DEFAULT_API_BASE = "https://staging.rcdrift.ro"
 _POLL_INTERVAL_MS = 1000
 _last_poll_ms = 0
 _cached = None
+_boot = None
+_pending_press = None
+_last_payload = None
+_last_status = 0
+_coordinator = None
 
 
 def _defaults():
@@ -58,6 +63,7 @@ def is_paired():
 
 
 def unpair():
+    reset_runtime()
     cfg = load()
     cfg["device_token"] = ""
     cfg["device_id"] = ""
@@ -74,19 +80,22 @@ def _headers(token=None):
     return h
 
 
-def _request(method, path, body=None, token=None, timeout=8):
+def _request(method, path, body=None, token=None, timeout=2):
+    global _last_status
     cfg = load()
     base = (cfg.get("api_base") or DEFAULT_API_BASE).rstrip("/")
     url = base + path
     try:
         from http_client import request_json
         status, parsed = request_json(method, url, data=body, headers=_headers(token), timeout=timeout)
+        _last_status = status
         if status < 200 or status >= 300:
             print("[Cloud] HTTP", status, path)
             return parsed
         return parsed if parsed is not None else {}
     except Exception as e:
-        print("[Cloud] Request failed:", e)
+        _last_status = 0
+        print("[Cloud] Request failed:", type(e).__name__)
         return None
 
 
@@ -104,7 +113,8 @@ def pair(code, label="Start Light", firmware_version=""):
         "code": str(code).strip().upper(),
         "devicePublicId": public_id,
         "label": label,
-        "firmwareVersion": firmware_version or "micropython",
+        "firmwareVersion": firmware_version or "startlight-control-2",
+        "protocolVersion": 2,
     }
     res = _request("POST", "/api/startlight/pair", body)
     if not res or not res.get("ok") or not res.get("deviceToken"):
@@ -117,14 +127,37 @@ def pair(code, label="Start Light", firmware_version=""):
     cfg["enabled"] = True
     if res.get("apiBase"):
         cfg["api_base"] = res["apiBase"]
+    reset_runtime()
     save(cfg)
-    print("[Cloud] Paired to event", cfg["event_id"])
+    with open("cloud_state.json", "w") as f:
+        json.dump({"boot_counter": 0}, f)
+    print("[Cloud] Paired")
     return True, "ok"
 
 
+
+def identity():
+    global _boot
+    if _boot is not None:
+        return _boot
+    import os
+    try:
+        with open("cloud_state.json") as f:
+            previous = json.load(f).get("boot_counter", 0)
+    except OSError:
+        previous = 0
+    if not isinstance(previous, int) or previous < 0:
+        raise ValueError("Invalid Pico boot counter")
+    counter = previous + 1
+    with open("cloud_state.json", "w") as f:
+        json.dump({"boot_counter": counter}, f)
+    boot_id = "".join("%02x" % b for b in os.urandom(16))
+    _boot = {"bootId": boot_id, "bootCounter": counter}
+    return _boot
+
+
 def poll():
-    """Short poll. Returns payload dict or None."""
-    global _last_poll_ms
+    global _last_poll_ms, _last_payload
     if not is_paired():
         return None
     now = time.ticks_ms()
@@ -132,30 +165,102 @@ def poll():
         return None
     _last_poll_ms = now
     cfg = load()
-    return _request("GET", "/api/startlight/poll", token=cfg["device_token"], timeout=6)
+    result = _request("GET", "/api/startlight/poll?bootId=" + identity()["bootId"],
+                      token=cfg["device_token"], timeout=1.5)
+    if result:
+        _last_payload = result
+    return result
 
 
-def claim(command_id):
+def claim(command_id, revision):
     if not is_paired():
         return None
-    cfg = load()
-    return _request("POST", "/api/startlight/claim", {"commandId": command_id}, token=cfg["device_token"])
+    body = dict(identity())
+    body.update({"commandId": command_id, "revision": revision})
+    return _request("POST", "/api/startlight/claim", body,
+                    token=load()["device_token"], timeout=1.5)
+
+
+def signal(event_type, command_id, revision):
+    if not is_paired():
+        return None
+    body = dict(identity())
+    body.update({"type": event_type, "commandId": command_id,
+                 "revision": revision, "protocol": 2})
+    return _request("POST", "/api/startlight/events", body,
+                    token=load()["device_token"], timeout=1.5)
+
+
+def ack_off(revision, stopped=False, aborted_command=None):
+    if not is_paired():
+        return False
+    body = dict(identity())
+    body.update({"type": "stopped" if stopped else "sync", "revision": revision,
+                 "protocol": 2, "lampsOff": True})
+    if aborted_command:
+        body["abortedCommandId"] = aborted_command
+    result = _request("POST", "/api/startlight/events", body,
+                      token=load()["device_token"], timeout=1.5)
+    return bool(result and result.get("ok"))
+
+
+def press_button(revision):
+    global _pending_press
+    if not is_paired():
+        return {"ok": False, "error": "Not paired"}
+    if _pending_press is None:
+        import os
+        _pending_press = dict(identity())
+        _pending_press.update({"revision": revision,
+                              "requestId": "".join("%02x" % b for b in os.urandom(16))})
+    result = _request("POST", "/api/startlight/button", _pending_press,
+                      token=load()["device_token"], timeout=2)
+    if result and result.get("ok") or _last_status in (400, 401, 403, 404, 409):
+        _pending_press = None
+    return result or {"ok": False, "error": "No confirmation. Press again to check the same command."}
+
+
+def set_coordinator(coordinator):
+    global _coordinator
+    _coordinator = coordinator
+
+
+def local_press():
+    if _coordinator is None:
+        return {"ok": False, "error": "Wait for RCDrift synchronisation"}
+    return _coordinator.press()
+
+
+def status_snapshot():
+    control = ((_last_payload or {}).get("control") or {})
+    online = _coordinator is not None and not _coordinator._expired()
+    return {"paired": is_paired(), "label": control.get("label", "RCDrift"), "labelEn": control.get("labelEn", "RCDrift"),
+            "blocked": control.get("blocked", ""), "blockedEn": control.get("blockedEn", ""), "paused": control.get("paused", False),
+            "canPress": bool(control.get("canPress")) and online and not _coordinator.active}
 
 
 def post_event(event_type, command_id=None, detail=None):
-    if not is_paired():
-        return None
-    cfg = load()
-    body = {"type": event_type, "at": "%d" % time.time()}
-    if command_id:
-        body["commandId"] = command_id
-    if detail is not None:
-        body["detail"] = detail
-    return _request("POST", "/api/startlight/events", body, token=cfg["device_token"])
+    control = ((_last_payload or {}).get("control") or {})
+    if event_type == "local_start":
+        return local_press()
+    return signal(event_type, command_id, control.get("revision", -1))
 
 
 def status_line():
-    if not is_paired():
-        return "Local"
-    cfg = load()
-    return "Bound" if cfg.get("event_id") else "Cloud"
+    return "RCDrift" if is_paired() else "Local"
+
+
+def reset_runtime():
+    global _boot, _pending_press, _last_payload, _last_poll_ms
+    _boot = None
+    _pending_press = None
+    _last_payload = None
+    _last_poll_ms = 0
+    if _coordinator is not None:
+        _coordinator.lamps.all_off()
+        _coordinator.sensor_reset()
+        _coordinator.active = None
+        _coordinator.view = None
+        _coordinator.last_ok = None
+        _coordinator.need_stop = True
+        _coordinator.done_pending = False
