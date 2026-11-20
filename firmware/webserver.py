@@ -755,12 +755,17 @@ def handle_request(conn, settings, light_controller):
             body = response.encode("utf-8")
         else:
             body = response
+        cache = b""
+        if content_type.startswith("text/html"):
+            cache = b"Cache-Control: no-store\r\n"
         headers = (
             b"HTTP/1.1 200 OK\r\nContent-Type: "
             + content_type.encode()
             + b"\r\nContent-Length: "
             + str(len(body)).encode()
-            + b"\r\nConnection: close\r\n\r\n"
+            + b"\r\n"
+            + cache
+            + b"Connection: close\r\n\r\n"
         )
         _send_all(conn, headers)
         _send_all(conn, body)
