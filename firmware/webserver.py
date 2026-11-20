@@ -427,6 +427,11 @@ def serve_settings(settings):
 
 def serve_control(show_saved=False):
     """Generate remote control page HTML"""
+    try:
+        from cloud import is_paired
+        paired = bool(is_paired())
+    except Exception:
+        paired = False
     flash = (
         "<p class=\"flash\" id=\"savedMsg\" data-i18n=\"flash.saved\">Setari salvate.</p>"
         "<script>setTimeout(function(){var m=document.getElementById('savedMsg');"
@@ -491,10 +496,12 @@ def serve_control(show_saved=False):
         "h.removeAttribute('data-i18n');"
         "h.removeAttribute('data-i18n-html');"
         "h.innerHTML=list[Math.floor(Math.random()*list.length)]}"
-        "async function syncRaceButton(){try{var r=await fetch('/api/cloud/status');var j=await r.json();"
+        "var PAIRED=" + ("true" if paired else "false") + ";"
+        "async function syncRaceButton(){if(!PAIRED)return;"
+        "try{var r=await fetch('/api/cloud/status');var j=await r.json();"
         "if(j.paired){var b=document.getElementById('startBtn');b.textContent=(I18N.lang==='en'?j.labelEn:j.label)||'RCDrift';b.disabled=!j.canPress;"
         "document.getElementById('status').textContent=(I18N.lang==='en'?j.blockedEn:j.blocked)||'RCDrift';}}catch(e){}}"
-        "setInterval(syncRaceButton,1500);syncRaceButton();"
+        "if(PAIRED){setInterval(syncRaceButton,1500);syncRaceButton();}"
         "async function startRace(){"
         "var btn=document.getElementById('startBtn');"
         "var cd=document.getElementById('countdown');"
