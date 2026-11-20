@@ -309,6 +309,53 @@ def _shell(title_key, nav, body):
     )
 
 
+def _valid_api_base(base):
+    """Local-only check — never opens a network connection."""
+    if not base or len(base) > 96 or " " in base or not base.startswith("https://"):
+        return False
+    host = base[8:].split("/", 1)[0]
+    if not host or ":" in host or host.startswith(".") or host.endswith("."):
+        return False
+    for ch in host:
+        if not (ch.isalnum() or ch in ".-"):
+            return False
+    return True
+
+
+def _normalize_pair_code(code):
+    code = (code or "").strip().upper()
+    if not code or len(code) > 16:
+        return ""
+    for ch in code:
+        if not (ch.isalnum()):
+            return ""
+    return code
+
+
+def _cloud_redirect(conn, msg, href="/settings"):
+    """Tiny reply after cloud POSTs — avoid rebuilding the full settings page
+    on the same request (Pico W RAM is tight right after a JSON write)."""
+    body = (
+        "<!DOCTYPE html><html><head><meta charset=utf-8>"
+        "<meta name=viewport content=\"width=device-width,initial-scale=1\">"
+        "<title>Start Light</title></head><body style=\"font-family:sans-serif;"
+        "background:#0a0910;color:#f6f3fb;padding:24px\">"
+        "<p>" + html_escape(msg) + "</p>"
+        "<p><a href=\"" + href + "\" style=\"color:#48ccfa\">Inapoi la setari</a> · "
+        "<a href=\"/\" style=\"color:#48ccfa\">Control</a></p>"
+        "</body></html>"
+    ).encode()
+    _send_all(
+        conn,
+        (
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
+            b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+            b"Cache-Control: no-store\r\nConnection: close\r\n\r\n" + body
+        ),
+    )
+    conn.close()
+
+
 def _cloud_panel():
     """Optional rcdrift.ro pairing — standalone works without this."""
     try:
@@ -322,18 +369,21 @@ def _cloud_panel():
     return (
         "<div class=\"panel\" style=\"margin-top:16px\"><h2>rcdrift.ro</h2>"
         "<p class=\"hint\">Optional. Fara legare = Start Light local (standalone).</p>"
+        "<p class=\"hint\">Salveaza URL doar scrie pe Pico — nu apeleaza site-ul. "
+        "Imperecheaza necesita cod de pe organizer.</p>"
         "<p class=\"hint\">Status: <strong>" + html_escape(status) + "</strong> · event: "
         + event + "</p>"
         "<form method=\"POST\" action=\"/settings\">"
         "<input type=\"hidden\" name=\"cloud_action\" value=\"save_base\">"
         "<label>API base</label>"
-        "<input type=\"text\" name=\"cloud_api_base\" value=\"" + base + "\">"
+        "<input type=\"url\" name=\"cloud_api_base\" maxlength=\"96\" value=\"" + base + "\">"
         "<button class=\"btn ghost\" type=\"submit\" style=\"margin-top:10px\">Salveaza URL</button>"
         "</form>"
         "<form method=\"POST\" action=\"/settings\" style=\"margin-top:12px\">"
         "<input type=\"hidden\" name=\"cloud_action\" value=\"pair\">"
         "<label>Cod impartire (de pe site)</label>"
-        "<input type=\"text\" name=\"pair_code\" maxlength=\"16\" placeholder=\"ABC123\">"
+        "<input type=\"text\" name=\"pair_code\" maxlength=\"16\" required "
+        "autocomplete=\"off\" placeholder=\"ABC123\">"
         "<button class=\"btn\" type=\"submit\" style=\"margin-top:10px\">Imperecheaza</button>"
         "</form>"
         "<form method=\"POST\" action=\"/settings\" style=\"margin-top:12px\">"
@@ -628,21 +678,45 @@ def handle_request(conn, settings, light_controller):
                     try:
                         cloud_action = (form.get("cloud_action") or "").strip()
                         if cloud_action:
+                            try:
+                                import gc
+                                gc.collect()
+                            except Exception:
+                                pass
                             from cloud import load as cloud_load, save as cloud_save, pair, unpair, DEFAULT_API_BASE
                             if cloud_action == "save_base":
-                                cfg = cloud_load()
                                 base = (form.get("cloud_api_base") or DEFAULT_API_BASE).strip().rstrip("/")
-                                if base.startswith("https://"):
+                                print("[Web] Cloud save_base", base)
+                                if not _valid_api_base(base):
+                                    print("[Web] Rejected API base")
+                                    _cloud_redirect(conn, "URL invalid. Foloseste https://host fara spatiu.")
+                                else:
+                                    cfg = cloud_load()
                                     cfg["api_base"] = base
                                     cloud_save(cfg)
-                            elif cloud_action == "pair":
-                                code = (form.get("pair_code") or "").strip()
-                                if code:
-                                    pair(code)
-                            elif cloud_action == "unpair":
+                                    print("[Web] Cloud API base saved")
+                                    _cloud_redirect(conn, "URL salvat pe Pico (fara apel retea).")
+                                return
+                            if cloud_action == "pair":
+                                code = _normalize_pair_code(form.get("pair_code"))
+                                if not code:
+                                    print("[Web] Pair skipped: empty/invalid code")
+                                    _cloud_redirect(conn, "Cod lipsa. Standalone ramane activ.")
+                                    return
+                                _cloud_redirect(conn, "Se incearca imperecherea… Reincarca setarile in cateva secunde.")
+                                print("[Web] Pairing with code…")
+                                try:
+                                    ok, err = pair(code)
+                                    print("[Web] Pair result:", ok, err)
+                                except Exception as e:
+                                    print("[Web] Pair error:", type(e).__name__, e)
+                                return
+                            if cloud_action == "unpair":
+                                print("[Web] Cloud unpair")
                                 unpair()
-                            conn.send(b"HTTP/1.1 303 See Other\r\nLocation: /settings\r\nConnection: close\r\n\r\n")
-                            conn.close()
+                                _cloud_redirect(conn, "Dezlegat — standalone.")
+                                return
+                            _cloud_redirect(conn, "Actiune necunoscuta.")
                             return
                         # WiFi credentials
                         wifi_ssid = (form.get("wifi_ssid") or "").strip()

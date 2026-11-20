@@ -100,6 +100,9 @@ def _request(method, path, body=None, token=None, timeout=2):
 
 
 def pair(code, label="Start Light", firmware_version=""):
+    code = str(code or "").strip().upper()
+    if not code or len(code) > 16:
+        return False, "missing code"
     cfg = load()
     public_id = cfg.get("device_public_id") or ""
     if not public_id:
@@ -110,13 +113,14 @@ def pair(code, label="Start Light", firmware_version=""):
             public_id = "pico-%d" % time.ticks_ms()
         cfg["device_public_id"] = public_id
     body = {
-        "code": str(code).strip().upper(),
+        "code": code,
         "devicePublicId": public_id,
         "label": label,
         "firmwareVersion": firmware_version or "startlight-control-2",
         "protocolVersion": 2,
     }
-    res = _request("POST", "/api/startlight/pair", body)
+    print("[Cloud] Pair POST", (cfg.get("api_base") or DEFAULT_API_BASE))
+    res = _request("POST", "/api/startlight/pair", body, timeout=4)
     if not res or not res.get("ok") or not res.get("deviceToken"):
         err = (res or {}).get("error") or "pair failed"
         print("[Cloud] Pair failed:", err)
@@ -129,8 +133,11 @@ def pair(code, label="Start Light", firmware_version=""):
         cfg["api_base"] = res["apiBase"]
     reset_runtime()
     save(cfg)
-    with open("cloud_state.json", "w") as f:
-        json.dump({"boot_counter": 0}, f)
+    try:
+        with open("cloud_state.json", "w") as f:
+            json.dump({"boot_counter": 0}, f)
+    except Exception as e:
+        print("[Cloud] State save failed:", e)
     print("[Cloud] Paired")
     return True, "ok"
 
