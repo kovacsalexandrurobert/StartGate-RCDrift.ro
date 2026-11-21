@@ -181,13 +181,10 @@ def _status_lamps(lights, color, count, interval):
 
 
 def boot_self_test(lights):
-    """Run self-test: cycle through all configured light sets"""
+    """Run self-test: cycle through all configured light sets (paired or not)."""
     print("[Boot] Self-test: cycling lights...")
     show_boot()
-    if is_paired():
-        lights.all_off()
-    else:
-        lights.run_self_test()
+    lights.run_self_test()
     print("[Boot] Self-test done")
 
 

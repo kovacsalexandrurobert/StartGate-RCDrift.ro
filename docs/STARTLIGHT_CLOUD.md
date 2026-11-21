@@ -22,7 +22,7 @@ Default API base when enabling cloud: `https://staging.rcdrift.ro` (does not aut
 
 - Pause invalidates unused STARTs. During a sequence the firmware re-checks step/permission and stops lamps on pause, session change, or a lost 5 s lease. Network latency is not a hard e-stop.
 - `stopped` is acknowledged only after `all_off()`. Resume does not auto-start a new sequence.
-- On reboot, Pico persists a boot counter in `cloud_state.json`, turns lamps off, and syncs before claims. Stale counters / already-claimed commands cannot replay START.
+- On reboot, Pico persists a boot counter in `cloud_state.json`, runs the normal lamp self-test (even when paired), then turns lamps off and syncs before claims. Stale counters / already-claimed commands cannot replay START.
 - `done` means **lamps off**, not car arrival. IR finish sensor stays optional and off by default.
 
 ## Physical button
