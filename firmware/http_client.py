@@ -335,7 +335,7 @@ def _request_once(method, url, data=None, headers=None, timeout=8):
                     raise OSError("short write")
                 sent += n
             stage = "read"
-            ssock.settimeout(timeout if timeout else 8)
+            # MicroPython SSLSocket has no settimeout(); TCP sock timeout already set.
             while True:
                 try:
                     chunk = ssock.read(1024)
