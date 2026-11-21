@@ -8,12 +8,32 @@ _ssl_context = None
 _ntp_ok = False
 
 
-def _mem_free():
+def _mem_pair():
+    """(free, alloc) after a collect — useful in Thonny serial."""
     try:
         import gc
-        return gc.mem_free()
+        gc.collect()
+        return gc.mem_free(), gc.mem_alloc()
     except Exception:
-        return -1
+        return -1, -1
+
+
+def _mem_free():
+    return _mem_pair()[0]
+
+
+def heap_report(tag="heap"):
+    """Print free/alloc and optional micropython heap dump (shows in Thonny Shell)."""
+    free, alloc = _mem_pair()
+    total = free + alloc if free >= 0 and alloc >= 0 else -1
+    print("[HTTP] %s free=%d alloc=%d total~=%d" % (tag, free, alloc, total))
+    try:
+        import micropython
+        # mem_info(1) prints a detailed table to the REPL — open Thonny Shell to read it.
+        micropython.mem_info(1)
+    except Exception as e:
+        print("[HTTP] mem_info unavailable:", type(e).__name__)
+    return free, alloc
 
 
 def _exc_detail(e):
@@ -39,17 +59,24 @@ def reset_transport():
         gc.collect()
     except Exception:
         pass
-    print("[HTTP] transport reset mem=%d" % _mem_free())
+    free, alloc = _mem_pair()
+    print("[HTTP] transport reset free=%d alloc=%d" % (free, alloc))
 
 
 def _fail(stage, e):
     """Raise OSError with stage + detail; always log to serial first."""
     detail = _exc_detail(e)
-    print("[HTTP] FAIL", stage + ":", detail, "mem=%d" % _mem_free())
+    free, alloc = _mem_pair()
+    print("[HTTP] FAIL", stage + ":", detail, "free=%d alloc=%d" % (free, alloc))
     try:
         import time
         t = time.gmtime()
         print("[HTTP] UTC ~ %04d-%02d-%02d %02d:%02d" % (t[0], t[1], t[2], t[3], t[4]))
+    except Exception:
+        pass
+    # Full heap dump once per failure — watch Thonny Shell for the table.
+    try:
+        heap_report("after-" + stage)
     except Exception:
         pass
     raise OSError("%s: %s" % (stage, detail))
@@ -133,7 +160,8 @@ def _request_once(method, url, data=None, headers=None, timeout=8):
         lines.append("%s: %s" % (k, v))
     req = ("\r\n".join(lines) + "\r\n\r\n").encode() + body
 
-    print("[HTTP]", method, host + path, "mem=%d" % _mem_free())
+    free, alloc = _mem_pair()
+    print("[HTTP]", method, host + path, "free=%d alloc=%d" % (free, alloc))
     # NTP before TLS (UDP; needs WiFi, not the HTTPS TCP socket).
     _ensure_time()
     stage = "dns"
@@ -152,10 +180,13 @@ def _request_once(method, url, data=None, headers=None, timeout=8):
         except Exception as e:
             _fail("connect", e)
         stage = "tls"
+        free, alloc = _mem_pair()
+        print("[HTTP] pre-tls free=%d alloc=%d" % (free, alloc))
         try:
             ssock = _tls_context().wrap_socket(sock, server_hostname=host)
         except Exception as e:
             _fail("tls", e)
+
         try:
             stage = "write"
             sent = 0

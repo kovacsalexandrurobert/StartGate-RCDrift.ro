@@ -43,6 +43,16 @@ Auth: `Authorization: Bearer <deviceToken>` except pair.
 
 HTTPS verifies public CA + hostname (`root_ca.py` ISRG Root X1, `ntptime.py` for UTC). No `CERT_NONE` fallback. After a transport failure the client resets TLS/NTP, retries the request once, then backs off poll interval (1→10 s) until a success restores 1 s polling.
 
+**Heap (Thonny):** serial lines include `free=` / `alloc=`. On FAIL the firmware also prints `micropython.mem_info(1)`. Or interrupt in Thonny Shell and run:
+
+```python
+import gc, micropython
+from http_client import heap_report
+gc.collect(); print(gc.mem_free(), gc.mem_alloc()); heap_report("manual")
+```
+
+Pico W typically has ~150–190 KiB heap; TLS wrap often needs tens of KiB free or `tls` fails.
+
 ## Organizer manage API
 
 `POST /api/startlight/manage` (session + event manage): `createPairing`, `list` / `unbind` / `revokeDevice`, queue helpers, cue start/cancel as implemented on the site.
