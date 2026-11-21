@@ -149,25 +149,108 @@ def _peer_host(addr):
         return str(addr)
 
 
+def _dns_query_a(host, server, timeout=3):
+    """Minimal DNS A lookup (UDP). Router DNS often returns one sticky IP; public resolvers return all."""
+    # Build standard query: header + QNAME + QTYPE A + QCLASS IN
+    tid = 0x1234
+    header = bytes([
+        (tid >> 8) & 0xFF, tid & 0xFF,
+        0x01, 0x00,  # RD
+        0x00, 0x01,  # QDCOUNT
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ])
+    qname = b""
+    for label in host.split("."):
+        lb = label.encode()
+        qname += bytes([len(lb)]) + lb
+    qname += b"\x00"
+    question = qname + b"\x00\x01\x00\x01"
+    packet = header + question
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(timeout)
+    try:
+        sock.sendto(packet, (server, 53))
+        data, _ = sock.recvfrom(512)
+    finally:
+        try:
+            sock.close()
+        except Exception:
+            pass
+    if len(data) < 12:
+        return []
+    ancount = (data[6] << 8) | data[7]
+    # Skip header + question
+    i = 12
+    while i < len(data) and data[i] != 0:
+        i += 1 + data[i]
+    i += 5  # null + type + class
+    ips = []
+    for _ in range(ancount):
+        if i >= len(data):
+            break
+        # NAME (pointer or labels)
+        if (data[i] & 0xC0) == 0xC0:
+            i += 2
+        else:
+            while i < len(data) and data[i] != 0:
+                i += 1 + data[i]
+            i += 1
+        if i + 10 > len(data):
+            break
+        rtype = (data[i] << 8) | data[i + 1]
+        rdlen = (data[i + 8] << 8) | data[i + 9]
+        i += 10
+        if rtype == 1 and rdlen == 4 and i + 4 <= len(data):
+            ips.append("%d.%d.%d.%d" % (data[i], data[i + 1], data[i + 2], data[i + 3]))
+        i += rdlen
+    return ips
+
+
 def _resolve_peers(host, port):
-    """IPv4-first peer list; preferred successful peer tried first."""
+    """Merge system DNS + public resolvers; preferred peer first.
+
+    Pico DHCP DNS often returns a single A record (e.g. a dead port-forward IP).
+    Query 1.1.1.1 / 8.8.8.8 for the full set so connect can fail over.
+    """
+    ips = []
     infos = []
     try:
         infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
     except Exception as e:
         print("[HTTP] AF_INET dns:", _exc_detail(e))
     if not infos:
-        infos = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
-    peers = []
+        try:
+            infos = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
+        except Exception as e:
+            print("[HTTP] dns:", _exc_detail(e))
     for info in infos:
-        addr = info[-1]
-        if addr not in peers:
-            peers.append(addr)
+        tip = _peer_host(info[-1])
+        if tip and tip not in ips:
+            ips.append(tip)
+    for server in ("1.1.1.1", "8.8.8.8"):
+        try:
+            extra = _dns_query_a(host, server)
+            if extra:
+                print("[HTTP] dns %s via %s -> %s" % (host, server, ",".join(extra)))
+            for tip in extra:
+                if tip not in ips:
+                    ips.append(tip)
+        except Exception as e:
+            print("[HTTP] dns %s via %s fail: %s" % (host, server, _exc_detail(e)))
+    peers = [(tip, port) for tip in ips]
     pref = _preferred.get(host)
     if pref is not None:
-        # Rebuild list with preferred first even if DNS order changed.
-        rest = [a for a in peers if a != pref]
-        peers = [pref] + rest
+        pref_tip = _peer_host(pref)
+        rest = [p for p in peers if p[0] != pref_tip]
+        peers = [(pref_tip, port)] + rest if pref_tip else peers
+        # Deduplicate if pref already in list
+        seen = set()
+        ordered = []
+        for p in peers:
+            if p[0] not in seen:
+                seen.add(p[0])
+                ordered.append(p)
+        peers = ordered
     return peers
 
 

@@ -41,7 +41,7 @@ Auth: `Authorization: Bearer <deviceToken>` except pair.
 | `POST /api/startlight/events` | `sync` / `stopped` / `go` / `done` (+ optional sensor) |
 | `POST /api/startlight/button` | Stable `requestId` for retries |
 
-HTTPS verifies public CA + hostname (`root_ca.py` ISRG Root X1, `ntptime.py` for UTC). No `CERT_NONE` fallback. After a transport failure the client resets TLS, retries once (tries every IPv4 A-record — `connect: 110` is ETIMEDOUT on one peer), then backs off poll interval (1→10 s) until success restores 1 s polling.
+HTTPS verifies public CA + hostname (`root_ca.py` ISRG Root X1, `ntptime.py` for UTC). No `CERT_NONE` fallback. After a transport failure the client resets TLS, retries once, then backs off poll interval (1→10 s) until success restores 1 s polling. Peer list = system DNS **plus** UDP A lookups to `1.1.1.1` / `8.8.8.8` (router DNS may return only one sticky IP). `connect: 110` = TCP timeout on that peer — check MikroTik DST-NAT/WAN for that address.
 
 **Site “offline / unseen”:** binding stays. Online means `last_seen_at` within 15 s. Failed polls do not unbind; a later successful poll marks the device online again.
 
