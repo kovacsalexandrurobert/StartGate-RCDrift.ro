@@ -127,7 +127,8 @@ def _on_transport_fail():
     _poll_interval_ms = nxt
     try:
         from http_client import reset_transport
-        reset_transport()
+        # Keep NTP — connect:110 is peer timeout, not a clock problem.
+        reset_transport(keep_time=True, clear_peers=False)
     except Exception:
         pass
     print("[Cloud] Backing off poll to %dms (fail #%d)" % (_poll_interval_ms, _fail_streak))
