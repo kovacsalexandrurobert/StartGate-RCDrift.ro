@@ -6,6 +6,8 @@ import ssl
 
 _ssl_context = None
 _ntp_ok = False
+# host -> sockaddr that last connected successfully (www.rcdrift.ro has several A records).
+_preferred = {}
 
 
 def _mem_pair():
@@ -29,7 +31,6 @@ def heap_report(tag="heap"):
     print("[HTTP] %s free=%d alloc=%d total~=%d" % (tag, free, alloc, total))
     try:
         import micropython
-        # mem_info(1) prints a detailed table to the REPL — open Thonny Shell to read it.
         micropython.mem_info(1)
     except Exception as e:
         print("[HTTP] mem_info unavailable:", type(e).__name__)
@@ -49,21 +50,24 @@ def _exc_detail(e):
         return type(e).__name__
 
 
-def reset_transport():
-    """Drop cached TLS/NTP so the next request can recover after OSError/OOM."""
-    global _ssl_context, _ntp_ok
+def reset_transport(keep_time=False, clear_peers=False):
+    """Drop cached TLS (and optionally NTP/peers) so the next request can recover."""
+    global _ssl_context, _ntp_ok, _preferred
     _ssl_context = None
-    _ntp_ok = False
+    if not keep_time:
+        _ntp_ok = False
+    if clear_peers:
+        _preferred = {}
     try:
         import gc
         gc.collect()
     except Exception:
         pass
     free, alloc = _mem_pair()
-    print("[HTTP] transport reset free=%d alloc=%d" % (free, alloc))
+    print("[HTTP] transport reset free=%d alloc=%d keep_time=%s" % (free, alloc, keep_time))
 
 
-def _fail(stage, e):
+def _fail(stage, e, dump_heap=True):
     """Raise OSError with stage + detail; always log to serial first."""
     detail = _exc_detail(e)
     free, alloc = _mem_pair()
@@ -74,11 +78,11 @@ def _fail(stage, e):
         print("[HTTP] UTC ~ %04d-%02d-%02d %02d:%02d" % (t[0], t[1], t[2], t[3], t[4]))
     except Exception:
         pass
-    # Full heap dump once per failure — watch Thonny Shell for the table.
-    try:
-        heap_report("after-" + stage)
-    except Exception:
-        pass
+    if dump_heap:
+        try:
+            heap_report("after-" + stage)
+        except Exception:
+            pass
     raise OSError("%s: %s" % (stage, detail))
 
 
@@ -94,12 +98,11 @@ def _ensure_time(force=False):
         import ntptime
         ntptime.settime()
         t = time.gmtime()
-        print("[HTTP] NTP ok: %04d-%02d-%02d %02d:%02d mem=%d" % (
+        print("[HTTP] NTP ok: %04d-%02d-%02d %02d:%02d free=%d" % (
             t[0], t[1], t[2], t[3], t[4], _mem_free()))
         _ntp_ok = True
     except Exception as e:
-        # Keep going — next recovery pass will force again.
-        print("[HTTP] NTP failed:", _exc_detail(e), "mem=%d" % _mem_free())
+        print("[HTTP] NTP failed:", _exc_detail(e), "free=%d" % _mem_free())
         _ntp_ok = False
 
 
@@ -107,7 +110,7 @@ def _tls_context():
     """One shared SSLContext — building + loading the CA every request OOMs Pico W."""
     global _ssl_context
     if _ssl_context is None:
-        print("[HTTP] TLS context init mem=%d" % _mem_free())
+        print("[HTTP] TLS context init free=%d" % _mem_free())
         from root_ca import DER
         try:
             import gc
@@ -118,7 +121,7 @@ def _tls_context():
         ctx.verify_mode = ssl.CERT_REQUIRED
         ctx.load_verify_locations(cadata=DER)
         _ssl_context = ctx
-        print("[HTTP] TLS context ready mem=%d" % _mem_free())
+        print("[HTTP] TLS context ready free=%d" % _mem_free())
     return _ssl_context
 
 
@@ -137,6 +140,65 @@ def _parse_url(url):
         host, ps = host.split(":", 1)
         port = int(ps)
     return host, port, path
+
+
+def _peer_host(addr):
+    try:
+        return str(addr[0])
+    except Exception:
+        return str(addr)
+
+
+def _resolve_peers(host, port):
+    """IPv4-first peer list; preferred successful peer tried first."""
+    infos = []
+    try:
+        infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+    except Exception as e:
+        print("[HTTP] AF_INET dns:", _exc_detail(e))
+    if not infos:
+        infos = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
+    peers = []
+    for info in infos:
+        addr = info[-1]
+        if addr not in peers:
+            peers.append(addr)
+    pref = _preferred.get(host)
+    if pref is not None:
+        # Rebuild list with preferred first even if DNS order changed.
+        rest = [a for a in peers if a != pref]
+        peers = [pref] + rest
+    return peers
+
+
+def _connect_any(host, port, timeout):
+    """Try every resolved address. errno 110 = ETIMEDOUT on a dead/blocked A-record."""
+    global _preferred
+    stage_peers = _resolve_peers(host, port)
+    if not stage_peers:
+        raise OSError("dns: no addresses")
+    print("[HTTP] dns %s -> %d peer(s)" % (host, len(stage_peers)))
+    last = None
+    for addr in stage_peers:
+        tip = _peer_host(addr)
+        print("[HTTP] connect try %s:%s (timeout=%ss)" % (tip, port, timeout))
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        try:
+            sock.connect(addr)
+            _preferred[host] = addr
+            print("[HTTP] connected %s:%s" % (tip, port))
+            return sock
+        except Exception as e:
+            last = e
+            print("[HTTP] connect fail %s: %s" % (tip, _exc_detail(e)))
+            try:
+                sock.close()
+            except Exception:
+                pass
+            if _preferred.get(host) == addr:
+                _preferred.pop(host, None)
+    raise OSError("connect: %s" % _exc_detail(last or OSError("all peers failed")))
 
 
 def _request_once(method, url, data=None, headers=None, timeout=8):
@@ -162,23 +224,18 @@ def _request_once(method, url, data=None, headers=None, timeout=8):
 
     free, alloc = _mem_pair()
     print("[HTTP]", method, host + path, "free=%d alloc=%d" % (free, alloc))
-    # NTP before TLS (UDP; needs WiFi, not the HTTPS TCP socket).
     _ensure_time()
-    stage = "dns"
-    try:
-        addr = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)[0][-1]
-    except Exception as e:
-        _fail("dns", e)
-    sock = socket.socket()
-    sock.settimeout(timeout)
+    sock = None
     buf = b""
     ssock = None
+    stage = "connect"
     try:
-        stage = "connect"
+        # Per-peer TCP timeout; multi-A hosts need room to fall through.
+        connect_timeout = timeout if timeout and timeout > 4 else 8
         try:
-            sock.connect(addr)
+            sock = _connect_any(host, port, connect_timeout)
         except Exception as e:
-            _fail("connect", e)
+            _fail("connect", e, dump_heap=False)
         stage = "tls"
         free, alloc = _mem_pair()
         print("[HTTP] pre-tls free=%d alloc=%d" % (free, alloc))
@@ -186,7 +243,6 @@ def _request_once(method, url, data=None, headers=None, timeout=8):
             ssock = _tls_context().wrap_socket(sock, server_hostname=host)
         except Exception as e:
             _fail("tls", e)
-
         try:
             stage = "write"
             sent = 0
@@ -196,6 +252,7 @@ def _request_once(method, url, data=None, headers=None, timeout=8):
                     raise OSError("short write")
                 sent += n
             stage = "read"
+            ssock.settimeout(timeout if timeout else 8)
             while True:
                 try:
                     chunk = ssock.read(1024)
@@ -214,7 +271,8 @@ def _request_once(method, url, data=None, headers=None, timeout=8):
                 pass
     finally:
         try:
-            sock.close()
+            if sock is not None:
+                sock.close()
         except Exception:
             pass
         try:
@@ -229,7 +287,7 @@ def _request_once(method, url, data=None, headers=None, timeout=8):
     status_line = head.split(b"\r\n", 1)[0]
     parts = status_line.split()
     status = int(parts[1]) if len(parts) >= 2 else 0
-    print("[HTTP]", status, host + path, "mem=%d" % _mem_free())
+    print("[HTTP]", status, host + path, "free=%d" % _mem_free())
     lower_head = head.lower()
     if b"transfer-encoding: chunked" in lower_head:
         chunks = []
@@ -255,16 +313,20 @@ def _request_once(method, url, data=None, headers=None, timeout=8):
 
 
 def request(method, url, data=None, headers=None, timeout=8):
-    """Returns (status_code, body_text). Retries once after transport reset."""
+    """Returns (status_code, body_text). Retries once after a light transport reset."""
     try:
         return _request_once(method, url, data=data, headers=headers, timeout=timeout)
     except OSError as e:
-        print("[HTTP] recovering:", _exc_detail(e))
-        reset_transport()
-        _ensure_time(force=True)
+        detail = _exc_detail(e)
+        print("[HTTP] recovering:", detail)
+        # Connect timeouts are network/DNS-order issues — keep NTP, reshuffle peers.
+        keep_time = detail.startswith("connect:")
+        reset_transport(keep_time=keep_time, clear_peers=True)
+        if not keep_time:
+            _ensure_time(force=True)
         try:
             import time
-            time.sleep_ms(300)
+            time.sleep_ms(400)
         except Exception:
             pass
         print("[HTTP] retry once…")

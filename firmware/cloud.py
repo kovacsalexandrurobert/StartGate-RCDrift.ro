@@ -251,8 +251,9 @@ def poll():
         return None
     _last_poll_ms = now
     cfg = load()
+    # Allow multi-A connect fallbacks (www.rcdrift.ro has several IPs; 110=ETIMEDOUT).
     result = _request("GET", "/api/startlight/poll?bootId=" + identity()["bootId"],
-                      token=cfg["device_token"], timeout=2.5)
+                      token=cfg["device_token"], timeout=8)
     if result:
         _last_payload = result
     return result

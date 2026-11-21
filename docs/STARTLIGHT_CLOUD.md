@@ -41,17 +41,18 @@ Auth: `Authorization: Bearer <deviceToken>` except pair.
 | `POST /api/startlight/events` | `sync` / `stopped` / `go` / `done` (+ optional sensor) |
 | `POST /api/startlight/button` | Stable `requestId` for retries |
 
-HTTPS verifies public CA + hostname (`root_ca.py` ISRG Root X1, `ntptime.py` for UTC). No `CERT_NONE` fallback. After a transport failure the client resets TLS/NTP, retries the request once, then backs off poll interval (1→10 s) until a success restores 1 s polling.
+HTTPS verifies public CA + hostname (`root_ca.py` ISRG Root X1, `ntptime.py` for UTC). No `CERT_NONE` fallback. After a transport failure the client resets TLS, retries once (tries every IPv4 A-record — `connect: 110` is ETIMEDOUT on one peer), then backs off poll interval (1→10 s) until success restores 1 s polling.
 
-**Heap (Thonny):** serial lines include `free=` / `alloc=`. On FAIL the firmware also prints `micropython.mem_info(1)`. Or interrupt in Thonny Shell and run:
+**Site “offline / unseen”:** binding stays. Online means `last_seen_at` within 15 s. Failed polls do not unbind; a later successful poll marks the device online again.
+
+**Heap (Thonny):** serial lines include `free=` / `alloc=`. On TLS/read FAIL the firmware prints `micropython.mem_info(1)`. Or in Thonny Shell:
 
 ```python
-import gc, micropython
+import gc
 from http_client import heap_report
 gc.collect(); print(gc.mem_free(), gc.mem_alloc()); heap_report("manual")
 ```
 
-Pico W typically has ~150–190 KiB heap; TLS wrap often needs tens of KiB free or `tls` fails.
 
 ## Organizer manage API
 
