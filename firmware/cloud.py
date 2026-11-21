@@ -29,6 +29,32 @@ def _defaults():
     }
 
 
+def usable_api_base(base):
+    """Accept only a public https://hostname origin (no path/port/IP). Local check only."""
+    if not base or not isinstance(base, str):
+        return False
+    base = base.strip().rstrip("/")
+    if not base.startswith("https://") or " " in base or len(base) > 96:
+        return False
+    host = base[8:].lower()
+    # Entire remainder must be the host — reject paths/query/userinfo.
+    if not host or "/" in host or "?" in host or "#" in host or "@" in host:
+        return False
+    if ":" in host or host.startswith(".") or host.endswith("."):
+        return False
+    if host == "localhost" or host.endswith(".local"):
+        return False
+    # Require a DNS hostname (at least one letter) so IPv4 literals like
+    # 127.0.0.2 / 192.168.1.1 cannot overwrite a working public URL.
+    has_letter = False
+    for ch in host:
+        if "a" <= ch <= "z":
+            has_letter = True
+        elif not (("0" <= ch <= "9") or ch in ".-"):
+            return False
+    return has_letter
+
+
 def load():
     global _cached
     if _cached is not None:
@@ -129,8 +155,13 @@ def pair(code, label="Start Light", firmware_version=""):
     cfg["device_id"] = res.get("deviceId") or ""
     cfg["event_id"] = res.get("eventId") or ""
     cfg["enabled"] = True
-    if res.get("apiBase"):
-        cfg["api_base"] = res["apiBase"]
+    # Keep the URL that successfully paired if the site returns a loopback/proxy origin.
+    suggested = (res.get("apiBase") or "").strip().rstrip("/")
+    if suggested:
+        if usable_api_base(suggested):
+            cfg["api_base"] = suggested
+        else:
+            print("[Cloud] Ignoring apiBase from pair:", suggested)
     reset_runtime()
     save(cfg)
     try:

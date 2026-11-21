@@ -358,15 +358,11 @@ def _is_alnum(ch):
 
 def _valid_api_base(base):
     """Local-only check — never opens a network connection."""
-    if not base or len(base) > 96 or " " in base or not base.startswith("https://"):
+    try:
+        from cloud import usable_api_base
+        return usable_api_base(base)
+    except Exception:
         return False
-    host = base[8:].split("/", 1)[0]
-    if not host or ":" in host or host.startswith(".") or host.endswith("."):
-        return False
-    for ch in host:
-        if not (_is_alnum(ch) or ch in ".-"):
-            return False
-    return True
 
 
 def _normalize_pair_code(code):
