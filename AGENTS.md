@@ -107,17 +107,18 @@ Defaults in `config.py`: red 1.0 s, random wait 1–3 s, yellow interval 0.5 s, 
 
 Responses use `_send_all` (looped 1 KiB `socket.send` + `Content-Length`). A single `conn.send(big_buffer)` on Pico often truncates mid-page; there is no separate “raise the HTTP limit” knob.
 
-No authentication. The server is only as private as the LAN.
+Local web gate: cookie `sl_pin` must match `web_pin` from `startlight_config.json` (default `9009` / `config.WEB_PIN`). Unlocked browsers keep the cookie for 7 days. This is a LAN PIN, not a strong secret.
 
 | Route | Behavior |
 |-------|----------|
-| `GET /`, `GET /control` | Remote page. `?saved=1` shows a “Settings saved” banner |
-| `GET /settings` | Timing + WiFi form, plus per-channel LED test checkboxes |
-| `POST /settings` | Saves fields, responds `303` to `/?saved=1` |
-| `GET /start` | Builds a timing **plan** (delay, red, random wait, yellow interval, green hold), sets `start_requested`, returns that plan as JSON |
-| `GET /api/settings` | Current settings JSON. No WiFi password |
-| `GET /api/led?n=0..3&on=0\|1` | Holds that output on or off. `n` outside 0–3 returns `{"ok": false}` |
-| anything else | HTML 404 |
+| `GET/POST /pin` | Unlock form. Correct PIN sets `sl_pin` cookie and redirects to `/` |
+| `GET /`, `GET /control` | Remote page (requires PIN). `?saved=1` shows a “Settings saved” banner |
+| `GET /settings` | Timing + WiFi + web PIN form, plus per-channel LED test checkboxes (requires PIN) |
+| `POST /settings` | Saves fields (including `web_pin`), responds `303` to `/?saved=1` |
+| `GET /start` | Builds a timing **plan** (delay, red, random wait, yellow interval, green hold), sets `start_requested`, returns that plan as JSON (requires PIN) |
+| `GET /api/settings` | Current settings JSON. No WiFi password and no `web_pin` |
+| `GET /api/led?n=0..3&on=0\|1` | Holds that output on or off. `n` outside 0–3 returns `{"ok": false}` (requires PIN) |
+| anything else | HTML 404 (requires PIN; APIs return `401` without cookie) |
 
 POST `/settings` WiFi: a non-empty SSID is written with `wifi_config.save_credentials`. A blank password keeps the stored password. This does **not** reconnect or reboot; the new network is used on the next boot. Timing fields use `_safe_float` / `_safe_int` and fall back to the hardcoded defaults inside the handler (red 1, wait 1–3, yellow 0.5, green 3, delay mode 0, fixed 5, random 5–20), then `settings.save`.
 
@@ -217,7 +218,7 @@ All of these are gitignored. Sanitized templates (placeholders only) live in `do
 - Running WiFi and BLE together (one CYW43 on Pico W and Pico 2 W).
 - Flashing the wrong MicroPython UF2 for the physical board.
 - Driving more than the four color channels. Extra lamp trees are wired in parallel on the same SSR, not extra GPIOs.
-- Authenticating the HTTP server. Anyone on the LAN can start a run and can rewrite WiFi credentials.
+- Hardening the local web PIN beyond a shared LAN code in `startlight_config.json`.
 - Treating the BLE PIN as a secret. The connect notification repeats it.
 
 ## Shared competition control (protocol 2)
