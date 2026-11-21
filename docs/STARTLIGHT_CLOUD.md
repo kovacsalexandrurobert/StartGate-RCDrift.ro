@@ -36,7 +36,7 @@ Auth: `Authorization: Bearer <deviceToken>` except pair.
 | Call | Role |
 |------|------|
 | `POST /api/startlight/pair` | One-shot code → token; site stores hash only. `apiBase` must be a public `https://` origin (firmware ignores localhost/loopback) |
-| `GET /api/startlight/poll` | Control revision, STOP/sync, pending START, lease (~1 s poll) |
+| `GET /api/startlight/poll` | Control revision, STOP/sync, pending START, lease (~1 s poll). After boot sync, idle polls are GET-only — `control.stop` while not in a sequence (e.g. Preparation) must not trigger a POST every second |
 | `POST /api/startlight/claim` | Atomic claim; require `claimed: true` |
 | `POST /api/startlight/events` | `sync` / `stopped` / `go` / `done` (+ optional sensor) |
 | `POST /api/startlight/button` | Stable `requestId` for retries |

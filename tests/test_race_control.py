@@ -29,10 +29,14 @@ from race_control import RaceCoordinator, SequenceStopped, PhysicalButton
 from lights import LightController
 
 
-def view(revision=1, paused=False, command=None, status='armed'):
+def view(revision=1, paused=False, command=None, status='armed', stop=None, sync_required=False, permitted=None):
+    if stop is None:
+        stop = paused
+    if permitted is None:
+        permitted = not paused and not stop
     return {'bound': True, 'control': {'protocol': 2, 'revision': revision,
-            'paused': paused, 'stop': paused, 'permitted': not paused,
-            'syncRequired': False, 'canPress': not paused},
+            'paused': paused, 'stop': stop, 'permitted': permitted,
+            'syncRequired': sync_required, 'canPress': permitted and not paused},
             'cue': {'commandId': command, 'status': status} if command else None,
             'pendingCommand': {'commandId': command, 'type': 'START'} if command and status == 'armed' else None}
 
@@ -138,6 +142,31 @@ class ProtocolTests(unittest.TestCase):
         pin.value(0); self.assertFalse(button.pressed()); clock[0] += 60
         self.assertTrue(button.pressed()); self.assertFalse(button.pressed())
         clock[0] += 1000; self.assertFalse(button.pressed())
+
+    def test_idle_preparation_stop_does_not_reack_every_poll(self):
+        # setUp already did boot sync ack; Preparation keeps stop=true forever.
+        after_boot = len(self.client.acks)
+        self.assertGreaterEqual(after_boot, 1)
+        self.client.queue.append(view(stop=True, sync_required=False, permitted=False))
+        self.assertIsNone(self.c.tick())
+        self.client.queue.append(view(stop=True, sync_required=False, permitted=False))
+        self.assertIsNone(self.c.tick())
+        self.assertEqual(len(self.client.acks), after_boot)
+
+    def test_sync_required_acks_once_then_idle_stop_is_quiet(self):
+        after_boot = len(self.client.acks)
+        self.client.queue.append(view(stop=True, sync_required=True, permitted=False))
+        self.assertIsNone(self.c.tick())
+        self.assertEqual(len(self.client.acks), after_boot + 1)
+        self.client.queue.append(view(stop=True, sync_required=False, permitted=False))
+        self.assertIsNone(self.c.tick())
+        self.assertEqual(len(self.client.acks), after_boot + 1)
+
+    def test_active_stop_still_aborts_sequence(self):
+        self.assertEqual(self.claim(), 'command-1')
+        self.client.queue.append(view(2, stop=True, permitted=False, command='command-1', status='starting'))
+        with self.assertRaises(SequenceStopped):
+            self.c.tick()
 
 
 if __name__ == '__main__':

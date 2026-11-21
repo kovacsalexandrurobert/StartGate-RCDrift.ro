@@ -4,6 +4,20 @@ import json
 import socket
 import ssl
 
+_ssl_context = None
+
+
+def _tls_context():
+    """One shared SSLContext — building + loading the CA every request OOMs Pico W."""
+    global _ssl_context
+    if _ssl_context is None:
+        from root_ca import DER
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.verify_mode = ssl.CERT_REQUIRED
+        ctx.load_verify_locations(cadata=DER)
+        _ssl_context = ctx
+    return _ssl_context
+
 
 def _parse_url(url):
     if not url.startswith("https://"):
@@ -50,9 +64,9 @@ def request(method, url, data=None, headers=None, timeout=8):
         raise OSError("DNS failed: %s" % type(e).__name__)
     sock = socket.socket()
     sock.settimeout(timeout)
+    buf = b""
     try:
         sock.connect(addr)
-        from root_ca import DER
         import time
         if time.gmtime()[0] < 2025:
             try:
@@ -60,10 +74,7 @@ def request(method, url, data=None, headers=None, timeout=8):
                 ntptime.settime()
             except Exception as e:
                 print("[HTTP] NTP skipped:", type(e).__name__)
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        context.verify_mode = ssl.CERT_REQUIRED
-        context.load_verify_locations(cadata=DER)
-        ssock = context.wrap_socket(sock, server_hostname=host)
+        ssock = _tls_context().wrap_socket(sock, server_hostname=host)
         try:
             sent = 0
             while sent < len(req):
@@ -71,7 +82,6 @@ def request(method, url, data=None, headers=None, timeout=8):
                 if not n:
                     raise OSError("Incomplete HTTPS request")
                 sent += n
-            buf = b""
             while True:
                 try:
                     chunk = ssock.read(1024)
@@ -90,6 +100,11 @@ def request(method, url, data=None, headers=None, timeout=8):
     finally:
         try:
             sock.close()
+        except Exception:
+            pass
+        try:
+            import gc
+            gc.collect()
         except Exception:
             pass
 

@@ -57,10 +57,13 @@ class RaceCoordinator:
                         or cue.get('status') not in ('starting', 'go', 'done', 'finished')):
                     raise SequenceStopped('Server stopped this step')
             else:
+                # Idle: ack only for boot sync, orphans, or an outstanding need_stop.
+                # control.stop is true all through Preparation (not permitted) — do not
+                # POST TLS acks every poll or Pico W OOMs / soft-reboots and goes offline.
                 self.lamps.all_off()
                 orphan = cue.get('status') in ('starting', 'go')
-                if self.need_stop or control.get('stop') or control.get('syncRequired') or orphan:
-                    stopped = self.need_stop or control.get('stop') or orphan
+                if self.need_stop or control.get('syncRequired') or orphan:
+                    stopped = self.need_stop or orphan
                     if self.client.ack_off(control['revision'], stopped=stopped,
                                            aborted_command=cue.get('commandId') if orphan else None):
                         self.need_stop = False
