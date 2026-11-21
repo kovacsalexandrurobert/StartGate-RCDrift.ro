@@ -116,12 +116,27 @@ def _request(method, path, body=None, token=None, timeout=2):
         status, parsed = request_json(method, url, data=body, headers=_headers(token), timeout=timeout)
         _last_status = status
         if status < 200 or status >= 300:
-            print("[Cloud] HTTP", status, path)
+            err = ""
+            if isinstance(parsed, dict) and parsed.get("error"):
+                err = " " + str(parsed.get("error"))[:80]
+            print("[Cloud] HTTP", status, path + err)
             return parsed
         return parsed if parsed is not None else {}
     except Exception as e:
         _last_status = 0
-        print("[Cloud] Request failed:", type(e).__name__)
+        detail = ""
+        try:
+            if e.args:
+                detail = " " + " ".join(str(a) for a in e.args)[:120]
+        except Exception:
+            pass
+        mem = ""
+        try:
+            import gc
+            mem = " mem=%d" % gc.mem_free()
+        except Exception:
+            pass
+        print("[Cloud] Request failed:", type(e).__name__ + detail + mem)
         return None
 
 

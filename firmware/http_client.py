@@ -5,17 +5,77 @@ import socket
 import ssl
 
 _ssl_context = None
+_ntp_ok = False
+
+
+def _mem_free():
+    try:
+        import gc
+        return gc.mem_free()
+    except Exception:
+        return -1
+
+
+def _exc_detail(e):
+    """Short exception text for serial (MicroPython args vary)."""
+    try:
+        parts = []
+        if e.args:
+            for a in e.args:
+                parts.append(str(a))
+        msg = " ".join(parts).strip()
+        return msg if msg else type(e).__name__
+    except Exception:
+        return type(e).__name__
+
+
+def _fail(stage, e):
+    """Raise OSError with stage + detail; always log to serial first."""
+    detail = _exc_detail(e)
+    print("[HTTP] FAIL", stage + ":", detail, "mem=%d" % _mem_free())
+    try:
+        import time
+        t = time.gmtime()
+        print("[HTTP] UTC ~ %04d-%02d-%02d %02d:%02d" % (t[0], t[1], t[2], t[3], t[4]))
+    except Exception:
+        pass
+    raise OSError("%s: %s" % (stage, detail))
+
+
+def _ensure_time():
+    """TLS needs a plausible clock; Pico W boots far in the past without NTP."""
+    global _ntp_ok
+    if _ntp_ok:
+        return
+    import time
+    year = time.gmtime()[0]
+    # Refresh whenever the RTC looks wrong for current LE certs.
+    if year >= 2025 and year <= 2035:
+        _ntp_ok = True
+        return
+    print("[HTTP] NTP: RTC year=%d, syncing…" % year)
+    try:
+        import ntptime
+        ntptime.settime()
+        t = time.gmtime()
+        print("[HTTP] NTP ok: %04d-%02d-%02d %02d:%02d mem=%d" % (
+            t[0], t[1], t[2], t[3], t[4], _mem_free()))
+        _ntp_ok = True
+    except Exception as e:
+        print("[HTTP] NTP failed:", _exc_detail(e), "mem=%d" % _mem_free())
 
 
 def _tls_context():
     """One shared SSLContext — building + loading the CA every request OOMs Pico W."""
     global _ssl_context
     if _ssl_context is None:
+        print("[HTTP] TLS context init mem=%d" % _mem_free())
         from root_ca import DER
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         ctx.verify_mode = ssl.CERT_REQUIRED
         ctx.load_verify_locations(cadata=DER)
         _ssl_context = ctx
+        print("[HTTP] TLS context ready mem=%d" % _mem_free())
     return _ssl_context
 
 
@@ -57,44 +117,52 @@ def request(method, url, data=None, headers=None, timeout=8):
         lines.append("%s: %s" % (k, v))
     req = ("\r\n".join(lines) + "\r\n\r\n").encode() + body
 
-    print("[HTTP]", method, host)
+    print("[HTTP]", method, host + path, "mem=%d" % _mem_free())
+    stage = "dns"
     try:
         addr = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)[0][-1]
     except Exception as e:
-        raise OSError("DNS failed: %s" % type(e).__name__)
+        _fail("dns", e)
     sock = socket.socket()
     sock.settimeout(timeout)
     buf = b""
+    ssock = None
     try:
-        sock.connect(addr)
-        import time
-        if time.gmtime()[0] < 2025:
-            try:
-                import ntptime
-                ntptime.settime()
-            except Exception as e:
-                print("[HTTP] NTP skipped:", type(e).__name__)
-        ssock = _tls_context().wrap_socket(sock, server_hostname=host)
+        stage = "connect"
         try:
+            sock.connect(addr)
+        except Exception as e:
+            _fail("connect", e)
+        stage = "ntp"
+        _ensure_time()
+        stage = "tls"
+        try:
+            ssock = _tls_context().wrap_socket(sock, server_hostname=host)
+        except Exception as e:
+            _fail("tls", e)
+        try:
+            stage = "write"
             sent = 0
             while sent < len(req):
                 n = ssock.write(req[sent:sent + 1024])
                 if not n:
-                    raise OSError("Incomplete HTTPS request")
+                    raise OSError("short write")
                 sent += n
+            stage = "read"
             while True:
                 try:
                     chunk = ssock.read(1024)
-                except Exception:
-                    raise OSError("Incomplete HTTPS response")
+                except Exception as e:
+                    _fail("read", e)
                 if not chunk:
                     break
                 buf += chunk
                 if len(buf) > 16384:
-                    raise OSError("HTTPS response too large")
+                    raise OSError("response too large")
         finally:
             try:
-                ssock.close()
+                if ssock is not None:
+                    ssock.close()
             except Exception:
                 pass
     finally:
@@ -109,11 +177,12 @@ def request(method, url, data=None, headers=None, timeout=8):
             pass
 
     if b"\r\n\r\n" not in buf:
-        raise OSError("bad HTTP response")
+        raise OSError("bad HTTP response (empty/truncated) stage=%s" % stage)
     head, raw = buf.split(b"\r\n\r\n", 1)
     status_line = head.split(b"\r\n", 1)[0]
     parts = status_line.split()
     status = int(parts[1]) if len(parts) >= 2 else 0
+    print("[HTTP]", status, host + path, "mem=%d" % _mem_free())
     lower_head = head.lower()
     if b"transfer-encoding: chunked" in lower_head:
         chunks = []
