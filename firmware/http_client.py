@@ -43,7 +43,11 @@ def request(method, url, data=None, headers=None, timeout=8):
         lines.append("%s: %s" % (k, v))
     req = ("\r\n".join(lines) + "\r\n\r\n").encode() + body
 
-    addr = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)[0][-1]
+    print("[HTTP]", method, host)
+    try:
+        addr = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)[0][-1]
+    except Exception as e:
+        raise OSError("DNS failed: %s" % type(e).__name__)
     sock = socket.socket()
     sock.settimeout(timeout)
     try:
@@ -51,8 +55,11 @@ def request(method, url, data=None, headers=None, timeout=8):
         from root_ca import DER
         import time
         if time.gmtime()[0] < 2025:
-            import ntptime
-            ntptime.settime()
+            try:
+                import ntptime
+                ntptime.settime()
+            except Exception as e:
+                print("[HTTP] NTP skipped:", type(e).__name__)
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         context.verify_mode = ssl.CERT_REQUIRED
         context.load_verify_locations(cadata=DER)

@@ -11,6 +11,7 @@ from config import (
     YELLOW_INTERVAL, GREEN_OFF_DELAY,
     START_DELAY_MODE, START_DELAY_FIXED,
     START_DELAY_RANDOM_MIN, START_DELAY_RANDOM_MAX,
+    WEB_PIN,
 )
 
 
@@ -24,6 +25,7 @@ DEFAULTS = {
     "start_delay_fixed": START_DELAY_FIXED,
     "start_delay_random_min": START_DELAY_RANDOM_MIN,
     "start_delay_random_max": START_DELAY_RANDOM_MAX,
+    "web_pin": WEB_PIN,
 }
 
 
@@ -34,6 +36,7 @@ def load():
             data = json.load(f)
             result = DEFAULTS.copy()
             result.update(data)
+            result["web_pin"] = str(result.get("web_pin") or WEB_PIN)
             print("[Settings] Loaded from %s" % CONFIG_FILE)
             return result
     except (OSError, ValueError):

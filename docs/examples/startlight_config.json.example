@@ -7,5 +7,6 @@
   "start_delay_mode": 0,
   "start_delay_fixed": 5,
   "start_delay_random_min": 5,
-  "start_delay_random_max": 20
+  "start_delay_random_max": 20,
+  "web_pin": "9009"
 }

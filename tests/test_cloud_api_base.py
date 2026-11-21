@@ -14,11 +14,15 @@ class UsableApiBaseTest(unittest.TestCase):
         self.assertTrue(cloud.usable_api_base("https://www.rcdrift.ro"))
         self.assertTrue(cloud.usable_api_base("https://staging.rcdrift.ro/"))
 
-    def test_rejects_loopback_and_http(self):
+    def test_rejects_loopback_private_path_and_http(self):
         self.assertFalse(cloud.usable_api_base("https://localhost"))
         self.assertFalse(cloud.usable_api_base("https://127.0.0.1"))
+        self.assertFalse(cloud.usable_api_base("https://127.0.0.2"))
+        self.assertFalse(cloud.usable_api_base("https://192.168.1.1"))
+        self.assertFalse(cloud.usable_api_base("https://10.0.0.5"))
         self.assertFalse(cloud.usable_api_base("http://www.rcdrift.ro"))
         self.assertFalse(cloud.usable_api_base("https://www.rcdrift.ro:443"))
+        self.assertFalse(cloud.usable_api_base("https://www.rcdrift.ro/proxy"))
         self.assertFalse(cloud.usable_api_base(""))
 
 
