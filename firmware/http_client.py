@@ -29,6 +29,19 @@ def _exc_detail(e):
         return type(e).__name__
 
 
+def reset_transport():
+    """Drop cached TLS/NTP so the next request can recover after OSError/OOM."""
+    global _ssl_context, _ntp_ok
+    _ssl_context = None
+    _ntp_ok = False
+    try:
+        import gc
+        gc.collect()
+    except Exception:
+        pass
+    print("[HTTP] transport reset mem=%d" % _mem_free())
+
+
 def _fail(stage, e):
     """Raise OSError with stage + detail; always log to serial first."""
     detail = _exc_detail(e)
@@ -42,18 +55,14 @@ def _fail(stage, e):
     raise OSError("%s: %s" % (stage, detail))
 
 
-def _ensure_time():
+def _ensure_time(force=False):
     """TLS needs a plausible clock; Pico W boots far in the past without NTP."""
     global _ntp_ok
-    if _ntp_ok:
+    if _ntp_ok and not force:
         return
     import time
     year = time.gmtime()[0]
-    # Refresh whenever the RTC looks wrong for current LE certs.
-    if year >= 2025 and year <= 2035:
-        _ntp_ok = True
-        return
-    print("[HTTP] NTP: RTC year=%d, syncing…" % year)
+    print("[HTTP] NTP: syncing (RTC year=%d force=%s)…" % (year, force))
     try:
         import ntptime
         ntptime.settime()
@@ -62,7 +71,9 @@ def _ensure_time():
             t[0], t[1], t[2], t[3], t[4], _mem_free()))
         _ntp_ok = True
     except Exception as e:
+        # Keep going — next recovery pass will force again.
         print("[HTTP] NTP failed:", _exc_detail(e), "mem=%d" % _mem_free())
+        _ntp_ok = False
 
 
 def _tls_context():
@@ -71,6 +82,11 @@ def _tls_context():
     if _ssl_context is None:
         print("[HTTP] TLS context init mem=%d" % _mem_free())
         from root_ca import DER
+        try:
+            import gc
+            gc.collect()
+        except Exception:
+            pass
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         ctx.verify_mode = ssl.CERT_REQUIRED
         ctx.load_verify_locations(cadata=DER)
@@ -96,8 +112,8 @@ def _parse_url(url):
     return host, port, path
 
 
-def request(method, url, data=None, headers=None, timeout=8):
-    """Returns (status_code, body_text) or raises."""
+def _request_once(method, url, data=None, headers=None, timeout=8):
+    """Single attempt. Raises OSError on transport failure."""
     host, port, path = _parse_url(url)
     headers = dict(headers or {})
     body = b""
@@ -118,6 +134,8 @@ def request(method, url, data=None, headers=None, timeout=8):
     req = ("\r\n".join(lines) + "\r\n\r\n").encode() + body
 
     print("[HTTP]", method, host + path, "mem=%d" % _mem_free())
+    # NTP before TLS (UDP; needs WiFi, not the HTTPS TCP socket).
+    _ensure_time()
     stage = "dns"
     try:
         addr = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)[0][-1]
@@ -133,8 +151,6 @@ def request(method, url, data=None, headers=None, timeout=8):
             sock.connect(addr)
         except Exception as e:
             _fail("connect", e)
-        stage = "ntp"
-        _ensure_time()
         stage = "tls"
         try:
             ssock = _tls_context().wrap_socket(sock, server_hostname=host)
@@ -205,6 +221,23 @@ def request(method, url, data=None, headers=None, timeout=8):
     except Exception:
         text = ""
     return status, text
+
+
+def request(method, url, data=None, headers=None, timeout=8):
+    """Returns (status_code, body_text). Retries once after transport reset."""
+    try:
+        return _request_once(method, url, data=data, headers=headers, timeout=timeout)
+    except OSError as e:
+        print("[HTTP] recovering:", _exc_detail(e))
+        reset_transport()
+        _ensure_time(force=True)
+        try:
+            import time
+            time.sleep_ms(300)
+        except Exception:
+            pass
+        print("[HTTP] retry once…")
+        return _request_once(method, url, data=data, headers=headers, timeout=timeout)
 
 
 def request_json(method, url, data=None, headers=None, timeout=8):

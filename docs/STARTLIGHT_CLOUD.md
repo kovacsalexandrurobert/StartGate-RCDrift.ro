@@ -41,7 +41,7 @@ Auth: `Authorization: Bearer <deviceToken>` except pair.
 | `POST /api/startlight/events` | `sync` / `stopped` / `go` / `done` (+ optional sensor) |
 | `POST /api/startlight/button` | Stable `requestId` for retries |
 
-HTTPS verifies public CA + hostname (`root_ca.py` ISRG Root X1, `ntptime.py` for UTC). No `CERT_NONE` fallback.
+HTTPS verifies public CA + hostname (`root_ca.py` ISRG Root X1, `ntptime.py` for UTC). No `CERT_NONE` fallback. After a transport failure the client resets TLS/NTP, retries the request once, then backs off poll interval (1→10 s) until a success restores 1 s polling.
 
 ## Organizer manage API
 
