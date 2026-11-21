@@ -154,6 +154,11 @@ def _request_once(method, url, data=None, headers=None, timeout=8):
         stage = "tls"
         try:
             ssock = _tls_context().wrap_socket(sock, server_hostname=host)
+            # wrap_socket can ignore the plain-socket timeout on Pico W; re-apply.
+            try:
+                ssock.settimeout(timeout)
+            except Exception:
+                pass
         except Exception as e:
             _fail("tls", e)
         try:
@@ -223,11 +228,17 @@ def _request_once(method, url, data=None, headers=None, timeout=8):
     return status, text
 
 
-def request(method, url, data=None, headers=None, timeout=8):
-    """Returns (status_code, body_text). Retries once after transport reset."""
+def request(method, url, data=None, headers=None, timeout=8, retry=True):
+    """Returns (status_code, body_text). Optionally retries once after transport reset.
+
+    Polls pass retry=False so a hung TLS attempt returns quickly and the local
+    HTTP server can accept again (backoff still raises the next poll gap).
+    """
     try:
         return _request_once(method, url, data=data, headers=headers, timeout=timeout)
     except OSError as e:
+        if not retry:
+            raise
         print("[HTTP] recovering:", _exc_detail(e))
         reset_transport()
         _ensure_time(force=True)
@@ -240,8 +251,8 @@ def request(method, url, data=None, headers=None, timeout=8):
         return _request_once(method, url, data=data, headers=headers, timeout=timeout)
 
 
-def request_json(method, url, data=None, headers=None, timeout=8):
-    status, text = request(method, url, data=data, headers=headers, timeout=timeout)
+def request_json(method, url, data=None, headers=None, timeout=8, retry=True):
+    status, text = request(method, url, data=data, headers=headers, timeout=timeout, retry=retry)
     parsed = None
     if text:
         try:

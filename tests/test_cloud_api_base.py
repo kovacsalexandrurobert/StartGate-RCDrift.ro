@@ -23,6 +23,7 @@ class UsableApiBaseTest(unittest.TestCase):
         self.assertFalse(cloud.usable_api_base("http://www.rcdrift.ro"))
         self.assertFalse(cloud.usable_api_base("https://www.rcdrift.ro:443"))
         self.assertFalse(cloud.usable_api_base("https://www.rcdrift.ro/proxy"))
+        self.assertFalse(cloud.usable_api_base("https://www..rcdrift.ro"))
         self.assertFalse(cloud.usable_api_base(""))
 
 

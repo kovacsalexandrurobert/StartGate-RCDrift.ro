@@ -11,6 +11,15 @@ start_requested = False
 start_delay_value = 5  # seconds (legacy); prefer start_plan
 start_plan = None  # timing plan shared with lamps + web viz
 
+# Prebuilt — must not allocate after MemoryError (str(e) / encode can hang Pico W).
+_OOM_HTTP = (
+    b"HTTP/1.0 503 Service Unavailable\r\n"
+    b"Content-Type: text/plain; charset=utf-8\r\n"
+    b"Content-Length: 22\r\n"
+    b"Connection: close\r\n\r\n"
+    b"OOM - rebooting Pico\r\n"
+)
+
 
 def get_ip():
     """Get device IP address"""
@@ -110,6 +119,63 @@ def _send_all(conn, data):
         if not n:
             raise OSError("socket send returned 0")
         sent += n
+
+
+def _prep_large_html():
+    """Drop cached TLS/CA before building big pages — paired polls leave the
+    heap too fragmented for a single ~16 KiB settings allocation on Pico W.
+    """
+    try:
+        from http_client import reset_transport
+        reset_transport()
+    except Exception:
+        pass
+    try:
+        import gc
+        gc.collect()
+    except Exception:
+        pass
+
+
+def _soft_reboot_oom(where):
+    """OOM leaves the Pico W heap unusable — soft reboot; operator cannot recover otherwise."""
+    print("[Web] OOM", where, "- soft reboot")
+    try:
+        import machine
+        machine.reset()
+    except Exception:
+        pass
+
+
+def _send_html_parts(conn, parts):
+    """Stream HTML parts with Content-Length; never concatenate into one string."""
+    total = 0
+    for p in parts:
+        total += len(p)
+    _send_all(
+        conn,
+        b"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
+        b"Content-Length: " + str(total).encode() + b"\r\n"
+        b"Cache-Control: no-store\r\nConnection: close\r\n\r\n",
+    )
+    for p in parts:
+        _send_all(conn, p)
+
+
+def _send_html_stream(conn, chunks):
+    """HTTP/1.0 stream: send each chunk then drop it so peak RAM is one chunk.
+
+    Used for the full settings page (CSS + body + i18n) which cannot fit as one
+    contiguous allocation on Pico W after cloud TLS fragmentation.
+    """
+    _send_all(
+        conn,
+        b"HTTP/1.0 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
+        b"Cache-Control: no-store\r\nConnection: close\r\n\r\n",
+    )
+    for chunk in chunks:
+        if chunk:
+            _send_all(conn, chunk)
 
 
 def _css():
@@ -436,11 +502,71 @@ def _cloud_panel():
     )
 
 
-def serve_settings(settings):
-    """Generate settings page HTML"""
+def _send_paired_settings(conn):
+    """Minimal paired /settings: unpair only, streamed in small parts.
+
+    Full settings+i18n needs ~16 KiB contiguous and OOMs Pico W while TLS is warm.
+    """
+    try:
+        from cloud import load
+        event = html_escape(str((load() or {}).get("event_id") or "-")[:40])
+    except Exception:
+        event = "-"
+    # Many small pieces — peak alloc is one chunk, not the whole page.
+    parts = (
+        "<!DOCTYPE html><html><head><meta charset=utf-8>"
+        "<meta name=viewport content=\"width=device-width,initial-scale=1\">"
+        "<title>Setari</title>"
+        "<style>body{margin:0;background:#0a0910;color:#f6f3fb;font:16px/1.4 sans-serif;"
+        "padding:24px}a{color:#48ccfa}"
+        ".btn{display:block;width:100%;margin:16px 0;padding:14px;border:1px solid #78355f;"
+        "background:#291324;color:#f6f3fb;font-size:14px}</style></head><body>",
+        "<p><a href=/>Control</a></p>",
+        "<h1>RCDrift</h1>",
+        "<p>Event: ",
+        event,
+        "</p>",
+        "<form method=POST action=/settings>"
+        "<input type=hidden name=cloud_action value=unpair>"
+        "<button class=btn type=submit>Anuleaza legatura (standalone)</button>"
+        "</form>",
+        "<p>Dupa dezlegare reincarci /settings pentru WiFi, timpi, test LED.</p>",
+        "</body></html>",
+    )
+    _send_html_parts(conn, parts)
+
+
+def _settings_page_chunks(settings):
+    """Yield settings HTML in small pieces (generator) — never one giant string."""
     mode0 = "selected" if settings["start_delay_mode"] == 0 else ""
     mode1 = "selected" if settings["start_delay_mode"] == 1 else ""
-    body = (
+    yield (
+        "<!DOCTYPE html><html lang=\"ro\" data-i18n-title=\"title.settings\"><head>"
+        "<meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        "<meta name=\"theme-color\" content=\"#0a0910\">"
+        "<title>Start Light</title><style>"
+    )
+    yield _css()
+    yield (
+        "</style></head><body>"
+        "<div class=\"topline\">"
+        "<span data-i18n=\"top\">START LIGHT / CONTROL</span>"
+        "<span class=\"top-right\"><i></i>RCDRIFT.RO</span></div>"
+        "<div class=\"wrap\">"
+        "<a class=\"brand\" href=\"/\"><span class=\"sl\">//</span>"
+        "<span>START<span class=\"hi\">LIGHT</span><small>.ro</small></span></a>"
+        "<p class=\"powered\"><span data-i18n=\"foot\">Powered by </span>"
+        "<a href=\"https://www.rcdrift.ro\" target=\"_blank\" rel=\"noopener\">rcdrift.ro</a></p>"
+        "<div class=\"bar\">"
+        "<nav aria-label=\"Pages\">"
+        "<a href=\"/\" data-i18n=\"nav.remote\">Control</a>"
+        "<a href=\"/settings\" class=\"on\" data-i18n=\"nav.settings\">Setari</a>"
+        "</nav>"
+        "<div class=\"lang-switch\" role=\"group\" aria-label=\"Language\">"
+        "<button type=\"button\" data-lang=\"ro\" onclick=\"I18N.set('ro')\">RO</button>"
+        "<button type=\"button\" data-lang=\"en\" onclick=\"I18N.set('en')\">EN</button>"
+        "</div></div>"
         "<h1 data-i18n=\"set.h1\" data-i18n-html>SETARI.<br><em>TIMPI.</em></h1>"
         "<p class=\"lead\" data-i18n=\"set.lead\">WiFi, timpuri la lumini si test LED pe canal.</p>"
         "<form method=\"POST\" action=\"/settings\">"
@@ -454,6 +580,8 @@ def serve_settings(settings):
         + html_escape(_get_wifi_password())
         + "\" data-i18n-placeholder=\"ph.pass\" placeholder=\"Lasati gol ca sa pastreti parola\">"
         "</div>"
+    )
+    yield (
         "<div class=\"panel\"><h2 data-i18n=\"p.seq\">Secventa lumini</h2>"
         "<label data-i18n=\"l.red\">Durata rosu (sec)</label>"
         "<input type=\"number\" name=\"red_duration\" step=\"0.1\" min=\"0.5\" max=\"5\" value=\""
@@ -471,6 +599,8 @@ def serve_settings(settings):
         "<input type=\"number\" name=\"green_off_delay\" step=\"0.1\" min=\"1\" max=\"10\" value=\""
         + str(settings["green_off_delay"]) + "\">"
         "</div>"
+    )
+    yield (
         "<div class=\"panel\"><h2 data-i18n=\"p.delay\">Delay la start</h2>"
         "<label data-i18n=\"l.mode\">Mod</label>"
         "<select name=\"start_delay_mode\">"
@@ -496,8 +626,10 @@ def serve_settings(settings):
         "</div>"
         "<button class=\"btn\" type=\"submit\" data-i18n=\"btn.save\">Salveaza setari</button>"
         "</form>"
-        + _cloud_panel()
-        + "<div class=\"panel\" style=\"margin-top:16px\"><h2 data-i18n=\"p.led\">Test LED</h2>"
+    )
+    yield _cloud_panel()
+    yield (
+        "<div class=\"panel\" style=\"margin-top:16px\"><h2 data-i18n=\"p.led\">Test LED</h2>"
         "<p class=\"hint\" data-i18n=\"led.hint\">Bifat = APRINS.</p>"
         "<label class=\"check\"><input type=\"checkbox\" id=\"ledTest0\" "
         "onchange=\"ledTest(0,this.checked)\"> <span data-i18n=\"led.0\">Rosu (GP2)</span></label>"
@@ -520,9 +652,15 @@ def serve_settings(settings):
         "document.getElementById('ledTest'+i).checked=false;"
         "await fetch('/api/led?n='+i+'&on=0')}var m=document.getElementById('ledTestMsg');"
         "m.textContent=I18N.t('led.alloff');setTimeout(function(){m.textContent='';},1500)}"
-        "</script>"
+        "</script></div><script>"
     )
-    return _shell("title.settings", "settings", body)
+    yield _i18n_js()
+    yield "I18N.init()</script></body></html>"
+
+
+def _send_settings_page(conn, settings):
+    _prep_large_html()
+    _send_html_stream(conn, _settings_page_chunks(settings))
 
 
 def serve_pin(bad=False):
@@ -742,6 +880,12 @@ def handle_request(conn, settings, light_controller):
         response = ""
         content_type = "text/html"
 
+        # Browsers request this after every HTML page; a full 404 shell OOMs Pico W.
+        if path == "/favicon.ico":
+            _send_all(conn, b"HTTP/1.0 204 No Content\r\nConnection: close\r\n\r\n")
+            conn.close()
+            return
+
         # Local PIN gate (LAN). /pin is the only unlocked HTML entry.
         if path == "/pin":
             if method == "POST" and body:
@@ -801,6 +945,7 @@ def handle_request(conn, settings, light_controller):
             return
 
         if path == "/" or path == "/control":
+            _prep_large_html()
             response = serve_control(show_saved=(query.get("saved") == "1"))
         elif path == "/settings":
             if method == "POST" and body:
@@ -887,7 +1032,34 @@ def handle_request(conn, settings, light_controller):
                         return
                     except Exception as e:
                         print("[Web] Settings save error:", e)
-            response = serve_settings(settings)
+            try:
+                from cloud import is_paired
+                paired = bool(is_paired())
+            except Exception:
+                paired = False
+            try:
+                if paired:
+                    _prep_large_html()
+                    _send_paired_settings(conn)
+                else:
+                    _send_settings_page(conn, settings)
+            except MemoryError:
+                try:
+                    conn.send(_OOM_HTTP)
+                except Exception:
+                    pass
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                _soft_reboot_oom("settings")
+            except Exception as e:
+                print("[Web] Settings failed:", type(e).__name__)
+                try:
+                    _cloud_redirect(conn, "Eroare setari. Reincearca.")
+                except Exception:
+                    pass
+            return
         elif path == "/api/cloud/status":
             from cloud import status_snapshot
             content_type = "application/json"
@@ -989,23 +1161,47 @@ def handle_request(conn, settings, light_controller):
         )
         _send_all(conn, headers)
         _send_all(conn, body)
+    except MemoryError:
+        # Do not format/allocate here — that is what freezes Pico W after OOM.
+        try:
+            conn.send(_OOM_HTTP)
+        except Exception:
+            pass
+        try:
+            conn.close()
+        except Exception:
+            pass
+        _soft_reboot_oom("handle_request")
     except Exception as e:
         try:
-            conn.send(b"HTTP/1.1 500 OK\r\n\r\nError: " + str(e).encode())
+            # Keep this short; avoid huge str(e) allocations.
+            conn.send(b"HTTP/1.0 500\r\nContent-Length: 5\r\nConnection: close\r\n\r\nError")
+        except Exception:
+            pass
+        try:
+            print("[Web] handler error:", type(e).__name__)
         except Exception:
             pass
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def run_server(settings, light_controller, port=80):
     """Run HTTP server - accepts one connection, handles it, returns"""
     global start_requested
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    except MemoryError:
+        _soft_reboot_oom("socket")
+        return
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         s.bind(("", port))
     except OSError:
+        s.close()
         return  # Port in use
     s.listen(1)
     s.settimeout(1.0)
@@ -1013,10 +1209,19 @@ def run_server(settings, light_controller, port=80):
         conn, addr = s.accept()
         conn.settimeout(30)  # Allow time for POST body + file save (avoid ETIMEDOUT)
         handle_request(conn, settings, light_controller)
+    except MemoryError:
+        try:
+            s.close()
+        except Exception:
+            pass
+        _soft_reboot_oom("run_server")
     except OSError:
         pass  # Timeout
     finally:
-        s.close()
+        try:
+            s.close()
+        except Exception:
+            pass
 
 
 def is_start_requested():

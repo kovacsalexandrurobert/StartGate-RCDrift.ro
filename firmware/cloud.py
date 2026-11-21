@@ -17,6 +17,7 @@ _cached = None
 _boot = None
 _pending_press = None
 _last_payload = None
+_last_payload_log = None
 _last_status = 0
 _coordinator = None
 
@@ -44,6 +45,8 @@ def usable_api_base(base):
     if not host or "/" in host or "?" in host or "#" in host or "@" in host:
         return False
     if ":" in host or host.startswith(".") or host.endswith("."):
+        return False
+    if ".." in host:
         return False
     if host == "localhost" or host.endswith(".local"):
         return False
@@ -111,10 +114,14 @@ def _headers(token=None):
 
 def _on_transport_ok():
     global _fail_streak, _poll_interval_ms
-    if _fail_streak or _poll_interval_ms != _POLL_INTERVAL_MS:
+    # Only treat real transport failures as recovery. Idle stretch (3 s while
+    # paused) must not print "Link recovered" or force 1 s every poll.
+    if _fail_streak:
         print("[Cloud] Link recovered — poll interval %dms" % _POLL_INTERVAL_MS)
-    _fail_streak = 0
-    _poll_interval_ms = _POLL_INTERVAL_MS
+        _fail_streak = 0
+        _poll_interval_ms = _POLL_INTERVAL_MS
+    else:
+        _fail_streak = 0
 
 
 def _on_transport_fail():
@@ -133,14 +140,16 @@ def _on_transport_fail():
     print("[Cloud] Backing off poll to %dms (fail #%d)" % (_poll_interval_ms, _fail_streak))
 
 
-def _request(method, path, body=None, token=None, timeout=2):
+def _request(method, path, body=None, token=None, timeout=2, retry=True):
     global _last_status
     cfg = load()
     base = (cfg.get("api_base") or DEFAULT_API_BASE).rstrip("/")
     url = base + path
     try:
         from http_client import request_json
-        status, parsed = request_json(method, url, data=body, headers=_headers(token), timeout=timeout)
+        status, parsed = request_json(
+            method, url, data=body, headers=_headers(token), timeout=timeout, retry=retry
+        )
         _last_status = status
         if status < 200 or status >= 300:
             err = ""
@@ -241,8 +250,50 @@ def identity():
     return _boot
 
 
+def _log_payload(result):
+    """Serial log of a poll body. Reprint only when control state changes.
+
+    serverTime alone advances every poll — ignore it so we do not allocate and
+    print a near-identical JSON line every few seconds on Pico W.
+    """
+    global _last_payload_log
+    try:
+        # Stable fingerprint: drop wall-clock fields that always change.
+        snap = {
+            "bound": result.get("bound"),
+            "control": result.get("control"),
+            "cue": result.get("cue"),
+            "pendingCommand": result.get("pendingCommand"),
+            "queue": result.get("queue"),
+            "tournamentId": result.get("tournamentId"),
+        }
+        text = json.dumps(snap)
+    except Exception as e:
+        text = "unprintable " + type(e).__name__
+    if len(text) > 480:
+        text = text[:480] + "…"
+    if text == _last_payload_log:
+        return
+    _last_payload_log = text
+    print("[Cloud] payload", text)
+
+
+def force_poll_soon():
+    """Allow the next poll() immediately (after sync ack before START lease dies)."""
+    global _last_poll_ms
+    _last_poll_ms = 0
+
+
+def resume_poll():
+    """Re-open short-interval polling after the lamp sequence (all outputs off)."""
+    global _last_poll_ms, _poll_interval_ms, _fail_streak
+    _last_poll_ms = 0
+    _poll_interval_ms = _POLL_INTERVAL_MS
+    _fail_streak = 0
+
+
 def poll():
-    global _last_poll_ms, _last_payload
+    global _last_poll_ms, _last_payload, _poll_interval_ms
     if not is_paired():
         return None
     now = time.ticks_ms()
@@ -251,20 +302,44 @@ def poll():
         return None
     _last_poll_ms = now
     cfg = load()
-    result = _request("GET", "/api/startlight/poll?bootId=" + identity()["bootId"],
-                      token=cfg["device_token"], timeout=2.5)
+    # No in-request TLS retry: a failed poll backs off and frees the ready loop
+    # so the local web UI can accept (pair / unpair / settings).
+    # 2.5 s: Pico W often hits errno 110 (ETIMEDOUT) on TLS wrap at 1.5 s.
+    result = _request(
+        "GET",
+        "/api/startlight/poll?bootId=" + identity()["bootId"],
+        token=cfg["device_token"],
+        timeout=2.5,
+        retry=False,
+    )
     if result:
         _last_payload = result
+        _log_payload(result)
+        # Paused / not-permitted: stretch polls so local HTTP stays usable.
+        # When the site arms START (permitted / canPress / pendingCommand), snap
+        # back to 1 s — otherwise we can sit on a leftover 3 s gap.
+        control = result.get("control") or {}
+        if _fail_streak == 0 and (_coordinator is None or not _coordinator.active):
+            if result.get("pendingCommand") or (
+                control.get("permitted") and not control.get("paused")
+            ):
+                _poll_interval_ms = _POLL_INTERVAL_MS
+            elif control.get("paused") or not control.get("permitted"):
+                _poll_interval_ms = 3000
     return result
 
 
-def claim(command_id, revision):
+def claim(command_id, revision, plan=None):
     if not is_paired():
         return None
     body = dict(identity())
     body.update({"commandId": command_id, "revision": revision})
+    # Exact lamp plan for this run so the site preview matches Pico timings.
+    if plan:
+        body["plan"] = plan
+    # No TLS retry — START leases are short; a retry here is how we get 409 expired.
     return _request("POST", "/api/startlight/claim", body,
-                    token=load()["device_token"], timeout=1.5)
+                    token=load()["device_token"], timeout=2.5, retry=False)
 
 
 def signal(event_type, command_id, revision):
@@ -274,7 +349,7 @@ def signal(event_type, command_id, revision):
     body.update({"type": event_type, "commandId": command_id,
                  "revision": revision, "protocol": 2})
     return _request("POST", "/api/startlight/events", body,
-                    token=load()["device_token"], timeout=1.5)
+                    token=load()["device_token"], timeout=2.5, retry=False)
 
 
 def ack_off(revision, stopped=False, aborted_command=None):
@@ -285,8 +360,9 @@ def ack_off(revision, stopped=False, aborted_command=None):
                  "protocol": 2, "lampsOff": True})
     if aborted_command:
         body["abortedCommandId"] = aborted_command
+    # Idle sync must not burn a multi-second TLS recovery while a START is armed.
     result = _request("POST", "/api/startlight/events", body,
-                      token=load()["device_token"], timeout=1.5)
+                      token=load()["device_token"], timeout=2.0, retry=False)
     return bool(result and result.get("ok"))
 
 
@@ -337,10 +413,11 @@ def status_line():
 
 
 def reset_runtime():
-    global _boot, _pending_press, _last_payload, _last_poll_ms, _fail_streak, _poll_interval_ms
+    global _boot, _pending_press, _last_payload, _last_payload_log, _last_poll_ms, _fail_streak, _poll_interval_ms
     _boot = None
     _pending_press = None
     _last_payload = None
+    _last_payload_log = None
     _last_poll_ms = 0
     _fail_streak = 0
     _poll_interval_ms = _POLL_INTERVAL_MS

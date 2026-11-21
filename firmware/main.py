@@ -357,7 +357,19 @@ def main():
     led_off()  # Ensure onboard LED off when running
 
     import cloud
-    coordinator = RaceCoordinator(cloud, lights, sensor_reset)
+
+    def make_start_plan():
+        from settings import get_start_delay
+        import random
+        return {
+            "delay": int(get_start_delay(settings)),
+            "red_duration": float(settings["red_duration"]),
+            "random_wait": float(random.uniform(settings["random_wait_min"], settings["random_wait_max"])),
+            "yellow_interval": float(settings["yellow_interval"]),
+            "green_off_delay": float(settings["green_off_delay"]),
+        }
+
+    coordinator = RaceCoordinator(cloud, lights, sensor_reset, make_plan=make_start_plan)
     cloud.set_coordinator(coordinator)
     button = PhysicalButton()
     try:
@@ -412,9 +424,29 @@ def main():
             print("[Start] Failed:", type(e).__name__)
         finally:
             lights.all_off()
+            # Polling stays paused while lamps run; resume only when dark.
+            if is_paired() and not coordinator.active:
+                coordinator.resume_poll_after_off()
+
+    def _oom_reset(where):
+        print("[Boot] OOM", where, "- soft reboot")
+        try:
+            lights.all_off()
+        except Exception:
+            pass
+        try:
+            led_off()
+        except Exception:
+            pass
+        machine.reset()
 
     try:
         while True:
+            # Local HTTP first: a hung/slow cloud poll must not starve Settings/unpair.
+            try:
+                run_server(settings, lights)
+            except MemoryError:
+                _oom_reset("http")
             physical = button.pressed()
             if physical or is_start_requested():
                 plan = get_start_plan()
@@ -427,15 +459,24 @@ def main():
                 try:
                     command_id = coordinator.tick()
                     if command_id:
-                        _run_sequence(command_id=command_id)
+                        _run_sequence(plan=coordinator.active_plan, command_id=command_id)
                 except SequenceStopped:
                     coordinator.stop()
+                except MemoryError:
+                    _oom_reset("cloud")
                 except Exception as e:
                     coordinator.stop()
                     print("[Cloud] Stopped:", type(e).__name__)
+                # Second accept window after TLS so a browser waiting through a
+                # poll is not stuck until the next cloud round-trip.
+                try:
+                    run_server(settings, lights)
+                except MemoryError:
+                    _oom_reset("http2")
             sensor_tick()
-            run_server(settings, lights)
             time.sleep_ms(50)
+    except MemoryError:
+        _oom_reset("main")
     except KeyboardInterrupt:
         _cleanup(lights)
         print("Stopped (Ctrl+C). Ready for upload.")

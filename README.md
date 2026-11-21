@@ -34,7 +34,7 @@ The Pico has very little flash. Never copy `docs/`, markdown, or SVG onto the de
 
 ## Hardware
 
-- **Raspberry Pi Pico 2 W** (preferred) or Pico W — same GP2–GP7 wiring
+- **Raspberry Pi Pico 2 W** (required for paired rcdrift.ro events; see [docs/PICO_2W.md](docs/PICO_2W.md)) or Pico W for unpaired local use — same GP2–GP7 wiring
 - 4–16 Solid State Relays (logic-level, 3.3V compatible)
 - LED strips/lights (5–12V, powered via SSR)
 - 220Ω resistors (one per GPIO)
@@ -53,7 +53,7 @@ Flash the UF2 that matches the board (not interchangeable):
 
 Then copy the same `firmware/*.py` files with `mpremote` or Thonny. Full steps: [docs/DEPLOY.md](docs/DEPLOY.md).
 
-Optional **rcdrift.ro** binding (pairing code from the event hub) is documented in [docs/STARTLIGHT_CLOUD.md](docs/STARTLIGHT_CLOUD.md). Unpaired devices stay full standalone local Start Lights.
+Optional **rcdrift.ro** binding (pairing code from the event hub) is documented in [docs/STARTLIGHT_CLOUD.md](docs/STARTLIGHT_CLOUD.md). Sync mind map: [docs/STARTLIGHT_SYNC_MINDMAP.md](docs/STARTLIGHT_SYNC_MINDMAP.md). Unpaired devices stay full standalone local Start Lights; paired competition control needs **Pico 2 W**.
 
 ## Installation
 

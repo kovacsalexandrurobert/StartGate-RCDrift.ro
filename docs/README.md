@@ -13,6 +13,9 @@ GitHub Pages is served from this folder (`index.html` + `schematic.svg`). Site: 
 | [schematic.svg](schematic.svg) | Wiring diagram embedded on the page |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Trunk-based workflow: feature branch → PR → `main` |
 | [DEPLOY.md](DEPLOY.md) | Flash Pico 2 W / Pico W and copy `.py` only |
+| [PICO_2W.md](PICO_2W.md) | Why paired cloud needs Pico 2 W (TLS/RAM) |
+| [STARTLIGHT_CLOUD.md](STARTLIGHT_CLOUD.md) | Protocol 2 pair / poll / claim / events |
+| [STARTLIGHT_SYNC_MINDMAP.md](STARTLIGHT_SYNC_MINDMAP.md) | Sync happy path + failure branches |
 | [examples/](examples/) | Placeholder shapes for on-device JSON (no real passwords) |
 | [SCHEMATIC.md](SCHEMATIC.md) | Wiring, GPIO, SSR, optional OLED |
 | [../AGENTS.md](../AGENTS.md) | Behavior contract for AI agents |

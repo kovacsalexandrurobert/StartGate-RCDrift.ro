@@ -49,15 +49,22 @@ class Client:
         self.signals = []
         self.acks = []
         self.green_ok = True
+        self.resume_calls = 0
     def is_paired(self):
         return True
     def poll(self):
         return self.queue.popleft() if self.queue else None
+    def force_poll_soon(self):
+        pass
+    def resume_poll(self):
+        assert all(p.value() == 1 for p in self.lamps.pins)
+        self.resume_calls += 1
     def ack_off(self, revision, **kw):
         assert all(p.value() == 1 for p in self.lamps.pins)
         self.acks.append((revision, kw))
         return True
-    def claim(self, command, revision):
+    def claim(self, command, revision, plan=None):
+        self.last_plan = plan
         return {'ok': True, 'claimed': self.claimed}
     def signal(self, event, command, revision):
         if event == 'done':
@@ -87,25 +94,38 @@ class ProtocolTests(unittest.TestCase):
         self.assertIsNone(self.c.active)
         self.assertTrue(all(p.value() == 1 for p in self.lamps.pins))
 
-    def test_pause_interrupts_the_real_sequence_and_acknowledges_after_off(self):
+    def test_claim_sends_plan_for_site_preview(self):
+        plan = {'delay': 2, 'red_duration': 1.0, 'random_wait': 1.5,
+                'yellow_interval': 0.5, 'green_off_delay': 3.0}
+        self.c.make_plan = lambda: plan
         self.assertEqual(self.claim(), 'command-1')
-        def tick():
-            if clock[0] >= 100:
-                self.client.queue.append(view(2, paused=True))
-            self.c.tick()
+        self.assertEqual(self.client.last_plan, plan)
+        self.assertEqual(self.c.active_plan, plan)
+
+    def test_pause_stops_at_green_check_not_during_countdown(self):
+        # Mid-sequence ticks must not HTTPS-poll (Pico W TLS abort before red).
+        # STOP/pause is observed once at report('go').
+        self.assertEqual(self.claim(), 'command-1')
+        self.client.queue.append(view(2, paused=True, command='command-1', status='starting'))
         with self.assertRaises(SequenceStopped):
-            self.lamps.run_start_sequence(0, 1, 0, 0, .1, .1, tick=tick)
+            self.lamps.run_start_sequence(0, .1, 0, 0, .1, .1,
+                callback=lambda phase, sec: self.c.report(phase) if phase in ('go', 'done') else None,
+                tick=self.c.tick)
         self.assertTrue(all(p.value() == 1 for p in self.lamps.pins))
         self.c.stop()
         self.assertEqual(self.client.acks[-1][0], 2)
         self.assertFalse(self.c.press()['ok'])
 
-    def test_connection_loss_stops_before_green(self):
+    def test_sequence_survives_poll_silence_after_claim(self):
+        # Old behaviour: 5 s lease loss aborted Phase 1 before red. After claim,
+        # ticks hold the lease locally and do not poll until green.
         self.claim()
-        with self.assertRaises(SequenceStopped):
-            self.lamps.run_start_sequence(10, 1, 0, 0, .1, .1, tick=self.c.tick)
-        self.assertTrue(all(p.value() == 1 for p in self.lamps.pins))
-        self.assertLessEqual(clock[0], 5050)
+        self.lamps.run_start_sequence(0, .1, 0, 0, .1, .1,
+            callback=lambda phase, sec: self.c.report(phase) if phase in ('go', 'done') else None,
+            tick=self.c.tick)
+        self.assertEqual([s[0] for s in self.client.signals], ['go', 'done'])
+        self.assertIsNone(self.c.active)
+        self.assertGreaterEqual(self.client.resume_calls, 1, 'poll must reopen after lamps off')
 
     def test_done_is_reported_only_after_every_lamp_is_off(self):
         self.claim()
@@ -162,11 +182,28 @@ class ProtocolTests(unittest.TestCase):
         self.assertIsNone(self.c.tick())
         self.assertEqual(len(self.client.acks), after_boot + 1)
 
-    def test_active_stop_still_aborts_sequence(self):
+    def test_sync_required_with_pending_start_claims_before_ack(self):
+        after_boot = len(self.client.acks)
+        self.client.queue.append(view(2, sync_required=True, command='cmd-sync-start', status='armed'))
+        self.assertEqual(self.c.tick(), 'cmd-sync-start')
+        # Claim wins; sync ack is deferred so a slow TLS ack cannot expire START.
+        self.assertEqual(len(self.client.acks), after_boot)
+
+    def test_sync_then_followup_poll_claims_pending_start(self):
+        # Site pattern: first poll sync-only, START appears on the next poll.
+        after_boot = len(self.client.acks)
+        self.client.queue.append(view(2, sync_required=True, permitted=True, stop=False))
+        self.client.queue.append(view(2, sync_required=False, command='cmd-after-sync', status='armed'))
+        self.assertEqual(self.c.tick(), 'cmd-after-sync')
+        self.assertEqual(len(self.client.acks), after_boot + 1)
+
+    def test_active_stop_still_aborts_at_green(self):
         self.assertEqual(self.claim(), 'command-1')
         self.client.queue.append(view(2, stop=True, permitted=False, command='command-1', status='starting'))
         with self.assertRaises(SequenceStopped):
-            self.c.tick()
+            self.c.report('go')
+        # Idle ticks after claim must not poll / must not raise on silence.
+        self.assertIsNone(self.c.tick())
 
 
 if __name__ == '__main__':
