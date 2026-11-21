@@ -1,6 +1,6 @@
 # Deploy to Pico 2 W (or Pico W)
 
-The preferred board is **Raspberry Pi Pico 2 W** (RP2350). The same `firmware/*.py` files also run on the original **Pico W** (RP2040). Flash the **matching** MicroPython UF2 for the board you hold — the UF2s are not interchangeable.
+The preferred board is **Raspberry Pi Pico 2 W** (RP2350). The same `firmware/*.py` files also run on the original **Pico W** (RP2040) for **unpaired** local use. **Paired rcdrift.ro competition control requires Pico 2 W** — see [PICO_2W.md](PICO_2W.md). Flash the **matching** MicroPython UF2 for the board you hold — the UF2s are not interchangeable.
 
 The Pico has little flash. Copy **only** MicroPython modules from `firmware/`. Never copy `docs/`, `AGENTS.md`, `README.md`, SVG, or local `.json` credential files.
 

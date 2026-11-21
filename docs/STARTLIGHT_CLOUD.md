@@ -4,6 +4,8 @@ Optional cloud overlay. **Standalone local HTTP/BLE starts always work while unp
 
 Default API base when enabling cloud: `https://staging.rcdrift.ro` (does not auto-switch to production).
 
+**Paired competition WiFi needs [Pico 2 W](PICO_2W.md).** Sync sequence mind map: [STARTLIGHT_SYNC_MINDMAP.md](STARTLIGHT_SYNC_MINDMAP.md).
+
 ## Standalone (unpaired)
 
 - Local `GET /start`, web UI, and BLE `START` / `GO` / `RUN` run `run_start_sequence` only.
@@ -20,9 +22,11 @@ Default API base when enabling cloud: `https://staging.rcdrift.ro` (does not aut
 
 ## Pause, lease, reboot
 
-- Pause invalidates unused STARTs. During a sequence the firmware re-checks step/permission and stops lamps on pause, session change, or a lost 5 s lease. Network latency is not a hard e-stop.
-- `stopped` is acknowledged only after `all_off()`. Resume does not auto-start a new sequence.
-- On reboot, Pico persists a boot counter in `cloud_state.json`, runs the normal lamp self-test (even when paired), then turns lamps off and syncs before claims. Stale counters / already-claimed commands cannot replay START.
+- Pause invalidates unused STARTs. After a successful **claim**, HTTPS poll is **paused** for the whole lamp sequence (countdown included). The device holds the lease locally so Pico W TLS timeouts cannot abort a dark countdown before red. STOP/pause is re-checked once at green via `report('go')`. Network latency is not a hard e-stop.
+- Mid-sequence phase POSTs are forbidden (TLS/OOM risk). The claim body may include the exact lamp **plan** so Race Director’s preview matches this run without telemetry during the sequence.
+- `stopped` / `done` are acknowledged only after `all_off()`. Then `resume_poll` reopens the short poll interval for the next competition step. Resume does not auto-start a new sequence.
+- On reboot, Pico persists a boot counter in `cloud_state.json`, runs the normal lamp self-test (even when paired), then turns lamps off and syncs before claims. After a sync ack, the firmware force-polls immediately so a newly armed START is claimed before the short lease expires (avoids HTTP 409).
+- Stale counters / already-claimed commands cannot replay START.
 - `done` means **lamps off**, not car arrival. IR finish sensor stays optional and off by default.
 
 ## Physical button
@@ -37,7 +41,7 @@ Auth: `Authorization: Bearer <deviceToken>` except pair.
 |------|------|
 | `POST /api/startlight/pair` | One-shot code → token; site stores hash only. `apiBase` must be a public `https://` origin (firmware ignores localhost/loopback) |
 | `GET /api/startlight/poll` | Control revision, STOP/sync, pending START, lease (~1 s poll). After boot sync, idle polls are GET-only — `control.stop` while not in a sequence (e.g. Preparation) must not trigger a POST every second |
-| `POST /api/startlight/claim` | Atomic claim; require `claimed: true` |
+| `POST /api/startlight/claim` | Atomic claim; require `claimed: true`. Optional `plan` `{delay,red_duration,random_wait,yellow_interval,green_off_delay}` is stored on the cue so the site lamp preview matches this run |
 | `POST /api/startlight/events` | `sync` / `stopped` / `go` / `done` (+ optional sensor) |
 | `POST /api/startlight/button` | Stable `requestId` for retries |
 
