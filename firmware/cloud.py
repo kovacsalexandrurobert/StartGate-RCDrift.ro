@@ -9,7 +9,10 @@ import time
 CLOUD_FILE = "cloud_creds.json"
 DEFAULT_API_BASE = "https://staging.rcdrift.ro"
 _POLL_INTERVAL_MS = 1000
+_POLL_BACKOFF_MAX_MS = 10000
 _last_poll_ms = 0
+_poll_interval_ms = _POLL_INTERVAL_MS
+_fail_streak = 0
 _cached = None
 _boot = None
 _pending_press = None
@@ -106,6 +109,30 @@ def _headers(token=None):
     return h
 
 
+def _on_transport_ok():
+    global _fail_streak, _poll_interval_ms
+    if _fail_streak or _poll_interval_ms != _POLL_INTERVAL_MS:
+        print("[Cloud] Link recovered — poll interval %dms" % _POLL_INTERVAL_MS)
+    _fail_streak = 0
+    _poll_interval_ms = _POLL_INTERVAL_MS
+
+
+def _on_transport_fail():
+    global _fail_streak, _poll_interval_ms
+    _fail_streak += 1
+    # 1s → 2s → 4s → 8s → 10s cap so we keep trying without hammering RAM.
+    nxt = _POLL_INTERVAL_MS
+    for _ in range(min(_fail_streak, 4)):
+        nxt = min(nxt * 2, _POLL_BACKOFF_MAX_MS)
+    _poll_interval_ms = nxt
+    try:
+        from http_client import reset_transport
+        reset_transport()
+    except Exception:
+        pass
+    print("[Cloud] Backing off poll to %dms (fail #%d)" % (_poll_interval_ms, _fail_streak))
+
+
 def _request(method, path, body=None, token=None, timeout=2):
     global _last_status
     cfg = load()
@@ -116,12 +143,32 @@ def _request(method, path, body=None, token=None, timeout=2):
         status, parsed = request_json(method, url, data=body, headers=_headers(token), timeout=timeout)
         _last_status = status
         if status < 200 or status >= 300:
-            print("[Cloud] HTTP", status, path)
+            err = ""
+            if isinstance(parsed, dict) and parsed.get("error"):
+                err = " " + str(parsed.get("error"))[:80]
+            print("[Cloud] HTTP", status, path + err)
+            # Auth/protocol errors are not healed by TLS reset; keep interval.
+            if status >= 500 or status == 0:
+                _on_transport_fail()
             return parsed
+        _on_transport_ok()
         return parsed if parsed is not None else {}
     except Exception as e:
         _last_status = 0
-        print("[Cloud] Request failed:", type(e).__name__)
+        detail = ""
+        try:
+            if e.args:
+                detail = " " + " ".join(str(a) for a in e.args)[:120]
+        except Exception:
+            pass
+        mem = ""
+        try:
+            import gc
+            mem = " mem=%d" % gc.mem_free()
+        except Exception:
+            pass
+        print("[Cloud] Request failed:", type(e).__name__ + detail + mem)
+        _on_transport_fail()
         return None
 
 
@@ -199,12 +246,13 @@ def poll():
     if not is_paired():
         return None
     now = time.ticks_ms()
-    if _last_poll_ms and time.ticks_diff(now, _last_poll_ms) < _POLL_INTERVAL_MS:
+    gap = _poll_interval_ms if _poll_interval_ms else _POLL_INTERVAL_MS
+    if _last_poll_ms and time.ticks_diff(now, _last_poll_ms) < gap:
         return None
     _last_poll_ms = now
     cfg = load()
     result = _request("GET", "/api/startlight/poll?bootId=" + identity()["bootId"],
-                      token=cfg["device_token"], timeout=1.5)
+                      token=cfg["device_token"], timeout=2.5)
     if result:
         _last_payload = result
     return result
@@ -289,11 +337,18 @@ def status_line():
 
 
 def reset_runtime():
-    global _boot, _pending_press, _last_payload, _last_poll_ms
+    global _boot, _pending_press, _last_payload, _last_poll_ms, _fail_streak, _poll_interval_ms
     _boot = None
     _pending_press = None
     _last_payload = None
     _last_poll_ms = 0
+    _fail_streak = 0
+    _poll_interval_ms = _POLL_INTERVAL_MS
+    try:
+        from http_client import reset_transport
+        reset_transport()
+    except Exception:
+        pass
     if _coordinator is not None:
         _coordinator.lamps.all_off()
         _coordinator.sensor_reset()

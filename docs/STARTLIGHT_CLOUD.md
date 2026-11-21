@@ -36,12 +36,12 @@ Auth: `Authorization: Bearer <deviceToken>` except pair.
 | Call | Role |
 |------|------|
 | `POST /api/startlight/pair` | One-shot code → token; site stores hash only. `apiBase` must be a public `https://` origin (firmware ignores localhost/loopback) |
-| `GET /api/startlight/poll` | Control revision, STOP/sync, pending START, lease (~1 s poll) |
+| `GET /api/startlight/poll` | Control revision, STOP/sync, pending START, lease (~1 s poll). After boot sync, idle polls are GET-only — `control.stop` while not in a sequence (e.g. Preparation) must not trigger a POST every second |
 | `POST /api/startlight/claim` | Atomic claim; require `claimed: true` |
 | `POST /api/startlight/events` | `sync` / `stopped` / `go` / `done` (+ optional sensor) |
 | `POST /api/startlight/button` | Stable `requestId` for retries |
 
-HTTPS verifies public CA + hostname (`root_ca.py` ISRG Root X1, `ntptime.py` for UTC). No `CERT_NONE` fallback.
+HTTPS verifies public CA + hostname (`root_ca.py` ISRG Root X1, `ntptime.py` for UTC). No `CERT_NONE` fallback. After a transport failure the client resets TLS/NTP, retries the request once, then backs off poll interval (1→10 s) until a success restores 1 s polling.
 
 ## Organizer manage API
 
