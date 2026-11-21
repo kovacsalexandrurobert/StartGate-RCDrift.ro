@@ -351,6 +351,11 @@ def _shell(title_key, nav, body):
     )
 
 
+def _is_alnum(ch):
+    """MicroPython str often lacks isalnum(); use range checks instead."""
+    return ("0" <= ch <= "9") or ("A" <= ch <= "Z") or ("a" <= ch <= "z")
+
+
 def _valid_api_base(base):
     """Local-only check — never opens a network connection."""
     if not base or len(base) > 96 or " " in base or not base.startswith("https://"):
@@ -359,7 +364,7 @@ def _valid_api_base(base):
     if not host or ":" in host or host.startswith(".") or host.endswith("."):
         return False
     for ch in host:
-        if not (ch.isalnum() or ch in ".-"):
+        if not (_is_alnum(ch) or ch in ".-"):
             return False
     return True
 
@@ -369,7 +374,7 @@ def _normalize_pair_code(code):
     if not code or len(code) > 16:
         return ""
     for ch in code:
-        if not (ch.isalnum()):
+        if not _is_alnum(ch):
             return ""
     return code
 
