@@ -623,11 +623,14 @@ def handle_request(conn, settings, light_controller):
                         if cloud_action:
                             from cloud import load as cloud_load, save as cloud_save, pair, unpair, DEFAULT_API_BASE
                             if cloud_action == "save_base":
+                                from cloud import usable_api_base
                                 cfg = cloud_load()
                                 base = (form.get("cloud_api_base") or DEFAULT_API_BASE).strip().rstrip("/")
-                                if base.startswith("https://"):
+                                if usable_api_base(base):
                                     cfg["api_base"] = base
                                     cloud_save(cfg)
+                                else:
+                                    print("[Web] Rejected API base", base)
                             elif cloud_action == "pair":
                                 code = (form.get("pair_code") or "").strip()
                                 if code:

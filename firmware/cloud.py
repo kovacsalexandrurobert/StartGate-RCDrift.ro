@@ -29,6 +29,25 @@ def _defaults():
     }
 
 
+def usable_api_base(base):
+    """Accept only public https://host (no path/port/loopback). Local check only."""
+    if not base or not isinstance(base, str):
+        return False
+    base = base.strip().rstrip("/")
+    if not base.startswith("https://") or " " in base or len(base) > 96:
+        return False
+    host = base[8:].split("/", 1)[0].lower()
+    if not host or ":" in host or host.startswith(".") or host.endswith("."):
+        return False
+    if host in ("localhost", "127.0.0.1", "0.0.0.0", "::1") or host.endswith(".local"):
+        return False
+    for ch in host:
+        ok = ("0" <= ch <= "9") or ("a" <= ch <= "z") or ch in ".-"
+        if not ok:
+            return False
+    return True
+
+
 def load():
     global _cached
     if _cached is not None:
@@ -125,8 +144,13 @@ def pair(code, label="Start Light", firmware_version=""):
     cfg["device_id"] = res.get("deviceId") or ""
     cfg["event_id"] = res.get("eventId") or ""
     cfg["enabled"] = True
-    if res.get("apiBase"):
-        cfg["api_base"] = res["apiBase"]
+    # Keep the URL that successfully paired if the site returns a loopback/proxy origin.
+    suggested = (res.get("apiBase") or "").strip().rstrip("/")
+    if suggested:
+        if usable_api_base(suggested):
+            cfg["api_base"] = suggested
+        else:
+            print("[Cloud] Ignoring apiBase from pair:", suggested)
     reset_runtime()
     save(cfg)
     with open("cloud_state.json", "w") as f:
