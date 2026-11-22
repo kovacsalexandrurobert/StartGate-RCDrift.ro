@@ -165,8 +165,8 @@ def _send_html_parts(conn, parts):
 def _send_html_stream(conn, chunks):
     """HTTP/1.0 stream: send each chunk then drop it so peak RAM is one chunk.
 
-    Used for the full settings page (CSS + body + i18n) which cannot fit as one
-    contiguous allocation on Pico W after cloud TLS fragmentation.
+    Used for control/settings pages which cannot fit as one contiguous allocation
+    on Pico W (local mode included — no TLS needed to OOM a ~16 KiB string).
     """
     _send_all(
         conn,
@@ -176,6 +176,11 @@ def _send_html_stream(conn, chunks):
     for chunk in chunks:
         if chunk:
             _send_all(conn, chunk)
+            try:
+                import gc
+                gc.collect()
+            except Exception:
+                pass
 
 
 def _css():
@@ -685,19 +690,45 @@ def serve_pin(bad=False):
     return _shell("title.pin", "control", body)
 
 
-def serve_control(show_saved=False):
-    """Generate remote control page HTML"""
+def _control_page_chunks(show_saved=False):
+    """Yield remote control HTML in small pieces — never one giant string (Pico W)."""
     try:
         from cloud import is_paired
         paired = bool(is_paired())
     except Exception:
         paired = False
+    yield (
+        "<!DOCTYPE html><html lang=\"ro\" data-i18n-title=\"title.remote\"><head>"
+        "<meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        "<meta name=\"theme-color\" content=\"#0a0910\">"
+        "<title>Start Light</title><style>"
+    )
+    yield _css()
     flash = (
         "<p class=\"flash\" id=\"savedMsg\" data-i18n=\"flash.saved\">Setari salvate.</p>"
         "<script>setTimeout(function(){var m=document.getElementById('savedMsg');"
         "if(m)m.style.display='none'},4000)</script>"
     ) if show_saved else ""
-    body = (
+    yield (
+        "</style></head><body>"
+        "<div class=\"topline\">"
+        "<span data-i18n=\"top\">START LIGHT / CONTROL</span>"
+        "<span class=\"top-right\"><i></i>RCDRIFT.RO</span></div>"
+        "<div class=\"wrap\">"
+        "<a class=\"brand\" href=\"/\"><span class=\"sl\">//</span>"
+        "<span>START<span class=\"hi\">LIGHT</span><small>.ro</small></span></a>"
+        "<p class=\"powered\"><span data-i18n=\"foot\">Powered by </span>"
+        "<a href=\"https://www.rcdrift.ro\" target=\"_blank\" rel=\"noopener\">rcdrift.ro</a></p>"
+        "<div class=\"bar\">"
+        "<nav aria-label=\"Pages\">"
+        "<a href=\"/\" class=\"on\" data-i18n=\"nav.remote\">Control</a>"
+        "<a href=\"/settings\" data-i18n=\"nav.settings\">Setari</a>"
+        "</nav>"
+        "<div class=\"lang-switch\" role=\"group\" aria-label=\"Language\">"
+        "<button type=\"button\" data-lang=\"ro\" onclick=\"I18N.set('ro')\">RO</button>"
+        "<button type=\"button\" data-lang=\"en\" onclick=\"I18N.set('en')\">EN</button>"
+        "</div></div>"
         "<h1 id=\"heroLine\" data-i18n=\"ctrl.h1\" data-i18n-html>"
         "START.<br>LUMINI.<br><em>GO.</em></h1>"
         "<p class=\"lead\" data-i18n=\"ctrl.lead\">Apasa START, asteapta delay-ul, "
@@ -714,37 +745,23 @@ def serve_control(show_saved=False):
         "<button class=\"btn\" id=\"startBtn\" type=\"button\" onclick=\"startRace()\" "
         "data-i18n=\"btn.start\">START secventa</button>"
         "<script>"
-        # Compact funny drift headlines (3 lines). <\/em> keeps </script> parsers happy.
+        # Short hero list — long arrays OOMed Pico W when concatenated with CSS+i18n.
         "var HERO={"
         "en:["
         "'SLIDE.<br>DON\\'T<br><em>GRIP.<\\/em>',"
-        "'SMOKE.<br>THE<br><em>TIRES.<\\/em>',"
-        "'MORE<br>STEERING<br><em>INPUT.<\\/em>',"
+        "'FULL<br>SEND<br><em>MODE.<\\/em>',"
         "'HOLD<br>THAT<br><em>ANGLE.<\\/em>',"
-        "'CLUTCH<br>KICK<br><em>GO.<\\/em>',"
-        "'ENTRY.<br>THEN<br><em>CHAOS.<\\/em>',"
-        "'TIRES<br>SAY<br><em>BYE.<\\/em>',"
-        "'SIDEWAYS<br>IS<br><em>FORWARD.<\\/em>',"
-        "'HANDBRAKE<br>IS<br><em>LOVE.<\\/em>',"
-        "'IF IN<br>DOUBT<br><em>THROTTLE.<\\/em>',"
-        "'DRIFT NOW<br>CRY<br><em>LATER.<\\/em>',"
-        "'FULL<br>SEND<br><em>MODE.<\\/em>'"
+        "'SIDEWAYS<br>IS<br><em>FORWARD.<\\/em>'"
         "],"
         "ro:["
         "'ALUNECA.<br>NU<br><em>TRAGE.<\\/em>',"
-        "'FUM.<br>DIN<br><em>CAUCIUC.<\\/em>',"
-        "'UNGHI.<br>MAI<br><em>MULT.<\\/em>',"
-        "'DERAPA.<br>CU<br><em>ZAMBET.<\\/em>',"
-        "'FRIANA<br>DE<br><em>MANA.<\\/em>',"
-        "'INTRARE.<br>APOI<br><em>HAOS.<\\/em>',"
-        "'CAUCIUCUL<br>ZICE<br><em>PA.<\\/em>',"
-        "'DE-A<br>LATUL<br><em>E DRUM.<\\/em>',"
-        "'DACA<br>INDOIALA<br><em>GAZ.<\\/em>',"
         "'FULL<br>SEND<br><em>ACUM.<\\/em>',"
-        "'START.<br>LUMINI.<br><em>GO.<\\/em>',"
-        "'SENSEI<br>ZICE<br><em>MAI TARI.<\\/em>'"
+        "'UNGHI.<br>MAI<br><em>MULT.<\\/em>',"
+        "'START.<br>LUMINI.<br><em>GO.<\\/em>'"
         "]"
         "};"
+    )
+    yield (
         "function sleep(s){return new Promise(function(r){setTimeout(r,Math.round(s*1000))})}"
         "function setLamps(on){for(var i=0;i<4;i++){"
         "var el=document.getElementById('lamp'+i);"
@@ -793,9 +810,15 @@ def serve_control(show_saved=False):
         "finally{setLamps([0,0,0,0]);cd.textContent='';"
         "st.setAttribute('data-i18n','status.ready');"
         "st.textContent=I18N.t('status.ready');btn.disabled=false}}"
-        "</script>"
+        "</script></div><script>"
     )
-    return _shell("title.remote", "control", body)
+    yield _i18n_js()
+    yield "I18N.init()</script></body></html>"
+
+
+def _send_control_page(conn, show_saved=False):
+    _prep_large_html()
+    _send_html_stream(conn, _control_page_chunks(show_saved))
 
 
 
@@ -945,8 +968,19 @@ def handle_request(conn, settings, light_controller):
             return
 
         if path == "/" or path == "/control":
-            _prep_large_html()
-            response = serve_control(show_saved=(query.get("saved") == "1"))
+            try:
+                _send_control_page(conn, show_saved=(query.get("saved") == "1"))
+            except MemoryError:
+                try:
+                    conn.send(_OOM_HTTP)
+                except Exception:
+                    pass
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                _soft_reboot_oom("control")
+            return
         elif path == "/settings":
             if method == "POST" and body:
                 form = parse_form(body)
